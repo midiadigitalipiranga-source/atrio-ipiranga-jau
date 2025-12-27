@@ -38,11 +38,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONEXÃO COM GOOGLE SHEETS ---
+# --- CONEXÃO COM GOOGLE SHEETS (VERSÃO CORRIGIDA PARA NUVEM) ---
 @st.cache_resource
 def conectar():
-    gc = gspread.service_account(filename='credentials.json')
-    # SEU ID DA PLANILHA CORRETO
+    import json
+    
+    # Abre o arquivo de credenciais
+    with open('credentials.json') as f:
+        credenciais = json.load(f)
+    
+    # CORREÇÃO MÁGICA: Arruma a chave privada que costuma quebrar no servidor
+    # Ele troca as quebras de linha escritas (\n) por quebras reais
+    credenciais['private_key'] = credenciais['private_key'].replace('\\n', '\n')
+
+    # Conecta usando o dicionário corrigido
+    gc = gspread.service_account_from_dict(credenciais)
+    
+    # SEU ID DA PLANILHA
     KEY = "16zFy51tlxGmS-HQklP9_Ath4ZCv-s7Cmd38ayAhGZ_I" 
     sh = gc.open_by_key(KEY)
     return sh
