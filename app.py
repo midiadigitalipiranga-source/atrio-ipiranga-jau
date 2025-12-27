@@ -38,20 +38,20 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONEXÃO COM GOOGLE SHEETS (VERSÃO CORRIGIDA PARA NUVEM) ---
+# --- CONEXÃO COM GOOGLE SHEETS (USANDO COFRE/SECRETS) ---
 @st.cache_resource
 def conectar():
     import json
     
-    # Abre o arquivo de credenciais
-    with open('credentials.json') as f:
-        credenciais = json.load(f)
+    # Em vez de abrir arquivo, pegamos o texto direto do Cofre do Streamlit
+    # Isso evita qualquer erro de formatação ou arquivo corrompido
+    texto_credenciais = st.secrets["gcp_service_account"]["credenciais_json"]
+    credenciais = json.loads(texto_credenciais)
     
-    # CORREÇÃO MÁGICA: Arruma a chave privada que costuma quebrar no servidor
-    # Ele troca as quebras de linha escritas (\n) por quebras reais
+    # A correção de segurança continua aqui, só por garantia
     credenciais['private_key'] = credenciais['private_key'].replace('\\n', '\n')
 
-    # Conecta usando o dicionário corrigido
+    # Conecta
     gc = gspread.service_account_from_dict(credenciais)
     
     # SEU ID DA PLANILHA
