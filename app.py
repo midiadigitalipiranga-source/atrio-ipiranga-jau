@@ -38,20 +38,23 @@ def tela_login():
         
         if st.button("Entrar", use_container_width=True):
             # Verifica se a senha bate com a do cofre
-            senha_correta = st.secrets["acesso"]["senha_admin"]
-            if senha == senha_correta:
-                st.session_state["logado"] = True
-                st.rerun()
-            else:
-                st.error("Senha incorreta!")
+            try:
+                senha_correta = st.secrets["acesso"]["senha_admin"]
+                if senha == senha_correta:
+                    st.session_state["logado"] = True
+                    st.rerun()
+                else:
+                    st.error("Senha incorreta!")
+            except:
+                st.error("Erro: Senha não configurada no Secrets.")
 
 # --- SE NÃO ESTIVER LOGADO, PARA TUDO E MOSTRA LOGIN ---
 if not st.session_state["logado"]:
     tela_login()
-    st.stop()  # Impede que o resto do código rode
+    st.stop()
 
 # ==============================================================================
-# DAQUI PARA BAIXO É O SEU CÓDIGO DO SISTEMA (SÓ RODA SE TIVER LOGADO)
+# SISTEMA ÁTRIO (LOGADO)
 # ==============================================================================
 
 # --- CONEXÃO COM GOOGLE SHEETS ---
@@ -163,7 +166,9 @@ def mostrar_apresentacao():
             st.cache_resource.clear()
             st.rerun()
     st.markdown("---")
+    
     sh = conectar()
+    
     areas_para_apresentar = [
         ("cadastro_recados", "📌 Recados e Avisos", "Atenção para os recados do dia:"),
         ("cadastro_ausencia", "📉 Ausências Justificadas", None),
@@ -172,17 +177,22 @@ def mostrar_apresentacao():
         ("cadastro_visitante", "🫂 Visitantes", "Sejam muito bem-vindos à casa do Senhor! Gostaríamos de conhecê-los."),
         ("cadastro_oracao", "🙏 Pedidos de Oração", "Estaremos intercedendo por estas causas durante a semana.")   
     ]
+    
     for nome_aba, titulo_tela, mensagem_padrao in areas_para_apresentar:
         try:
             try: aba = sh.worksheet(nome_aba)
             except: continue
+            
             dados = aba.get_all_records()
             if not dados: continue 
+            
             df = pd.DataFrame(dados)
             col_status = None
             if "Aprovação" in df.columns: col_status = "Aprovação"
             elif "Status" in df.columns: col_status = "Status"
-            if col_status: df = df[df[col_status].astype(str).str.contains("Aprovado", case=False, na=False)]
+            
+            if col_status: 
+                df = df[df[col_status].astype(str).str.contains("Aprovado", case=False, na=False)]
             
             abas_com_filtro_hoje = ["cadastro_recados", "cadastro_visitante", "cadastro_ausencia"]
             if nome_aba in abas_com_filtro_hoje:
@@ -191,9 +201,30 @@ def mostrar_apresentacao():
                 df = df[df[col_data].dt.date == hoje]
             
             if not df.empty:
+                
+                # --- NOVIDADE AQUI: TEXTO DE SAUDAÇÃO ---
+                # Se for a área de RECADOS, mostra a saudação antes do título
+                if nome_aba == "cadastro_recados":
+                     st.markdown("""
+                        <div style='
+                            text-align: center; 
+                            background-color: #0e2433; 
+                            color: #ffc107; 
+                            padding: 10px; 
+                            border-radius: 10px; 
+                            margin-bottom: 20px;
+                            font-size: 20px;
+                            font-weight: bold;
+                        '>
+                            👋 "Cumprimento a igreja com a paz do Senhor!"
+                        </div>
+                    """, unsafe_allow_html=True)
+                # ----------------------------------------
+
                 st.markdown(f"### {titulo_tela}")
                 if mensagem_padrao:
                     st.markdown(f"<div style='background-color: #e8f4f8; padding: 15px; border-radius: 5px; border-left: 6px solid #ffc107; margin-bottom: 15px;'><p style='font-size: 22px; color: #0e2433; margin: 0; font-weight: 500;'>🗣️ \"{mensagem_padrao}\"</p></div>", unsafe_allow_html=True)
+                
                 colunas_indesejadas = [col_status, "Carimbo de data/hora", "Timestamp", "Data"]
                 df_visual = df.drop(columns=colunas_indesejadas, errors='ignore')
                 st.dataframe(df_visual, use_container_width=True, hide_index=True)
@@ -204,7 +235,6 @@ def mostrar_apresentacao():
 with st.sidebar:
     st.image("logo_atrio.png", use_container_width=True) 
     
-    # Botão de Sair (Logout)
     if st.button("🚪 Sair / Logout"):
         st.session_state["logado"] = False
         st.rerun()
