@@ -456,24 +456,43 @@ def mostrar_apresentacao():
         dados = aba.get_all_records()
         if dados:
             df = pd.DataFrame(dados)
+            
+            # Filtra itens aprovados
             if "Aprovação" in df.columns: 
                 df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
             
             if not df.empty:
                 st.markdown("### 🎂 Felicitações")
-                # Agrupando por Tipo
-                tipos = df["Tipo da felicitação"].unique()
-                for tipo in tipos:
-                    st.markdown(f"#### ✨ {tipo}")
-                    df_tipo = df[df["Tipo da felicitação"] == tipo]
+                
+                # Ordenação alfabética pela coluna [A] (índice 0) que é o Nome
+                df = df.sort_values(by=df.columns[0])
+                
+                # Agrupamento pela coluna [C] (índice 2) que é o Tipo da Parabenização
+                # Mapeamento solicitado: 
+                # H1 (Destaque) -> Coluna [B] (índice 1) - Quem está sendo parabenizado
+                # H2 (Subtítulo) -> Colunas [C] (índice 2) e [D] (índice 3)
+                
+                tipos_parabens = df.iloc[:, 2].unique()
+                
+                for tipo in tipos_parabens:
+                    st.markdown(f"<h4 style='color: #0e2433; border-bottom: 2px solid #ffc107; margin-top: 20px;'>✨ {tipo}</h4>", unsafe_allow_html=True)
+                    df_tipo = df[df.iloc[:, 2] == tipo]
+                    
                     for _, row in df_tipo.iterrows():
+                        val_nome_homenageado = row.iloc[1] # Coluna B
+                        val_tipo_info = row.iloc[2]       # Coluna C
+                        val_obs = row.iloc[3]             # Coluna D
+                        
                         st.markdown(f"""
                         <div class="agenda-card">
-                            <div class="texto-destaque">{row.get('Destinado a quem?', '')}</div>
-                            <div class="texto-normal">{row.get('Quantos anos / Observação', '')}</div>
+                            <div class="texto-destaque" style="font-size: 30px; color: #0e2433;">{val_nome_homenageado}</div>
+                            <div class="texto-normal" style="font-size: 20px; color: #555; margin-top: 5px;">
+                                <b>{val_tipo_info}</b> — {val_obs}
+                            </div>
                         </div>""", unsafe_allow_html=True)
                 st.markdown("---")
-    except: pass
+    except Exception as e:
+        st.error(f"Erro ao carregar Felicitações: {e}")
 
     # --- 6. PROGRAMAÇÃO SEMANAL ---
     try:
