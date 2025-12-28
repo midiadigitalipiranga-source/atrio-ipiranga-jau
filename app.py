@@ -29,7 +29,7 @@ st.markdown("""
     /* Títulos */
     h3 { color: #0e2433; border-left: 5px solid #ffc107; padding-left: 10px; }
 
-    /* --- Estilo para os Cards da Agenda --- */
+    /* --- Estilo para os Cards da Agenda e Apresentação --- */
     .agenda-card {
         background-color: white;
         padding: 20px;
@@ -60,6 +60,17 @@ st.markdown("""
         color: #666;
         margin-top: 5px;
         font-style: italic;
+    }
+    
+    /* Estilo adicional para destaques de texto na apresentação */
+    .texto-destaque {
+        font-size: 24px;
+        font-weight: bold;
+        color: #0e2433;
+    }
+    .texto-normal {
+        font-size: 18px;
+        color: #555;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -92,10 +103,6 @@ if not st.session_state["logado"]:
     tela_login()
     st.stop()
 
-# ==============================================================================
-# SISTEMA ÁTRIO (LOGADO)
-# ==============================================================================
-
 # --- CONEXÃO COM GOOGLE SHEETS ---
 @st.cache_resource
 def conectar():
@@ -117,23 +124,20 @@ def limpar_hora(valor):
     valor = str(valor).strip()
     if " " in valor:
         try:
-            # Tenta pegar a hora se for formato datetime "YYYY-MM-DD HH:MM:SS"
             parte_hora = valor.split(" ")[-1]
             if ":" in parte_hora:
-                return parte_hora[:5] # Retorna HH:MM
+                return parte_hora[:5]
         except: pass
-    return "⏰" # Retorna ícone se não achar hora
+    return "⏰"
 
 # --- FUNÇÃO AUXILIAR: FILTRAR SEMANA ---
 def filtrar_proxima_semana(df):
-    # Procura especificamente a coluna "Data do Evento" ou que tenha "Data"
     coluna_data = None
     for col in df.columns:
         if "Data" in col and "Carimbo" not in col:
             coluna_data = col
             break
     
-    # Se não achou, pega a coluna índice 1 (assumindo que 0 é timestamp)
     if not coluna_data and len(df.columns) > 1:
         coluna_data = df.columns[1]
     
@@ -183,7 +187,6 @@ def mostrar_tabela_gestao(nome_aba_sheets, titulo_na_tela, link_forms=None, filt
         if "Status" in df_full.columns: coluna_status = "Status"
         elif "Aprovação" not in df_full.columns: df_full["Aprovação"] = ""
 
-        # Checkbox Reprovar
         df_full["Reprovar?"] = df_full[coluna_status].astype(str).str.contains("Reprovado", case=False, na=False)
         cols = ["Reprovar?"] + [c for c in df_full.columns if c != "Reprovar?" and c != coluna_status]
         df_full = df_full[cols]
@@ -226,11 +229,9 @@ def mostrar_tabela_gestao(nome_aba_sheets, titulo_na_tela, link_forms=None, filt
                         st.rerun()
             with col2:
                 if link_forms: st.link_button(f"➕ Novo Cadastro", link_forms)
-        else:
-             if link_forms: st.link_button(f"➕ Novo Cadastro", link_forms)
     except Exception as e: st.error(f"Erro: {e}")
 
-# --- FUNÇÃO GESTÃO DA PROGRAMAÇÃO (3 COLUNAS) ---
+# --- FUNÇÃO GESTÃO DA PROGRAMAÇÃO ---
 def gerenciar_programacao():
     st.header("🗓️ Programação da Semana (Segunda a Domingo)")
     
@@ -251,7 +252,6 @@ def gerenciar_programacao():
     
     df_semana, col_data_filtro = filtrar_proxima_semana(df.copy())
     
-    # Filtro Aprovação (se existir a coluna, usa. Se não, mostra tudo)
     if "Aprovação" in df_semana.columns:
         df_semana = df_semana[~df_semana["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
     
@@ -265,16 +265,7 @@ def gerenciar_programacao():
                 data_str = df_dia.iloc[0][col_data_filtro].strftime('%d/%m')
                 st.markdown(f"#### {nome_dia} - {data_str}")
                 for _, row in df_dia.iterrows():
-                    # --- CORREÇÃO DEFINITIVA (3 COLUNAS) ---
-                    # Layout: [0] Carimbo, [1] Data, [2] Descrição
-                    
-                    val_timestamp = row.iloc[0] # Índice 0
-                    
-                    # Tenta pegar hora da coluna de data (índice 1) ou põe ícone
                     val_hora_destaque = limpar_hora(row.iloc[1]) 
-                    
-                    # Descrição é a coluna 2 (índice 2)
-                    # Verifica se existe coluna 2 para não dar erro IndexOutOfRange
                     val_descricao = row.iloc[2] if len(row) > 2 else "Evento sem descrição"
                     
                     st.markdown(f"""
@@ -332,6 +323,7 @@ def mostrar_apresentacao():
     st.markdown("---")
     
     sh = conectar()
+    hoje = datetime.now().date()
 
     # --- 1. RECADOS ---
     try:
@@ -340,22 +332,115 @@ def mostrar_apresentacao():
         if dados:
             df = pd.DataFrame(dados)
             df, col_data = converter_coluna_data(df)
-            hoje = datetime.now().date()
             df = df[df[col_data].dt.date == hoje]
-            
             if "Aprovação" in df.columns: 
                 df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
             
             if not df.empty:
                 st.markdown("""<div style='text-align: center; background-color: #0e2433; color: #ffc107; padding: 10px; border-radius: 10px; margin-bottom: 20px; font-size: 20px; font-weight: bold;'>👋 "Cumprimento a igreja com a paz do Senhor!"</div>""", unsafe_allow_html=True)
                 st.markdown("### 📌 Recados e Avisos")
-                st.markdown(f"<div style='background-color: #e8f4f8; padding: 15px; border-left: 6px solid #ffc107; margin-bottom: 15px;'>🗣️ Atenção para os recados do dia:</div>", unsafe_allow_html=True)
-                cols_drop = ["Aprovação", "Carimbo de data/hora", "Timestamp", "Data"]
-                st.dataframe(df.drop(columns=cols_drop, errors='ignore'), use_container_width=True, hide_index=True)
+                for _, row in df.iterrows():
+                    st.markdown(f"""
+                    <div class="agenda-card">
+                        <div class="texto-normal">Pede o recado: {row.get('Quem pede o recado', '')}</div>
+                        <div class="texto-destaque" style="font-style: italic; margin-top:5px;">"{row.get('Qual o recado', '')}"</div>
+                    </div>""", unsafe_allow_html=True)
                 st.markdown("---")
     except: pass
 
-    # --- 2. PROGRAMAÇÃO SEMANAL ---
+    # --- 2. VISITANTES ---
+    try:
+        aba = sh.worksheet("cadastro_visitante")
+        dados = aba.get_all_records()
+        if dados:
+            df = pd.DataFrame(dados)
+            df, col_data = converter_coluna_data(df)
+            df = df[df[col_data].dt.date == hoje]
+            if "Aprovação" in df.columns: 
+                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
+            
+            if not df.empty:
+                st.markdown("### 🫂 Visitantes")
+                for _, row in df.iterrows():
+                    st.markdown(f"""
+                    <div class="agenda-card">
+                        <div class="texto-destaque" style="color: #ffc107; background-color: #0e2433; display: inline-block; padding: 2px 10px; border-radius: 5px;">{row.get('Nome do visitante', '')}</div>
+                        <div class="texto-normal" style="margin-top:10px;">Convidado por: <b>{row.get('Quem convidou', '')}</b></div>
+                        <div class="agenda-col-a">Igreja: {row.get('Algum ministério/denominação', '')}</div>
+                    </div>""", unsafe_allow_html=True)
+                st.markdown("---")
+    except: pass
+
+    # --- 3. AUSÊNCIA ---
+    try:
+        aba = sh.worksheet("cadastro_ausencia")
+        dados = aba.get_all_records()
+        if dados:
+            df = pd.DataFrame(dados)
+            df, col_data = converter_coluna_data(df)
+            df = df[df[col_data].dt.date == hoje]
+            if "Aprovação" in df.columns: 
+                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
+            
+            if not df.empty:
+                st.markdown("### 📉 Ausências Justificadas")
+                for _, row in df.iterrows():
+                    st.markdown(f"""
+                    <div class="agenda-card">
+                        <div class="texto-destaque">{row.get('Nome', '')} <span style="font-size: 16px; color: #666; font-weight: normal;">({row.get('Cargo', '')})</span></div>
+                        <div class="texto-normal" style="margin-top:5px;"><b>Motivo:</b> {row.get('Motivo', '')}</div>
+                        <div class="agenda-col-a">Obs: {row.get('Observação', '')}</div>
+                    </div>""", unsafe_allow_html=True)
+                st.markdown("---")
+    except: pass
+
+    # --- 4. ORAÇÃO ---
+    try:
+        aba = sh.worksheet("cadastro_oracao")
+        dados = aba.get_all_records()
+        if dados:
+            df = pd.DataFrame(dados)
+            if "Aprovação" in df.columns: 
+                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
+            
+            if not df.empty:
+                st.markdown("### 🙏 Pedidos de Oração")
+                for _, row in df.iterrows():
+                    st.markdown(f"""
+                    <div class="agenda-card" style="border-left: 8px solid #ffc107;">
+                        <div class="texto-destaque">Oração para: {row.get('Oração destinada a', '')}</div>
+                        <div class="texto-normal"><b>Motivo:</b> {row.get('Motivo da oração', '')}</div>
+                        <div class="agenda-col-a">Obs: {row.get('Observação', '')}</div>
+                    </div>""", unsafe_allow_html=True)
+                st.markdown("---")
+    except: pass
+
+    # --- 5. PARABENIZAÇÃO ---
+    try:
+        aba = sh.worksheet("cadastro_parabenizacao")
+        dados = aba.get_all_records()
+        if dados:
+            df = pd.DataFrame(dados)
+            if "Aprovação" in df.columns: 
+                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
+            
+            if not df.empty:
+                st.markdown("### 🎂 Felicitações")
+                # Agrupando por Tipo
+                tipos = df["Tipo da felicitação"].unique()
+                for tipo in tipos:
+                    st.markdown(f"#### ✨ {tipo}")
+                    df_tipo = df[df["Tipo da felicitação"] == tipo]
+                    for _, row in df_tipo.iterrows():
+                        st.markdown(f"""
+                        <div class="agenda-card">
+                            <div class="texto-destaque">{row.get('Destinado a quem?', '')}</div>
+                            <div class="texto-normal">{row.get('Quantos anos / Observação', '')}</div>
+                        </div>""", unsafe_allow_html=True)
+                st.markdown("---")
+    except: pass
+
+    # --- 6. PROGRAMAÇÃO SEMANAL ---
     try:
         aba = sh.worksheet("cadastro_agenda_semanal")
         dados = aba.get_all_records()
@@ -368,59 +453,21 @@ def mostrar_apresentacao():
             
             if not df_semana.empty:
                 st.markdown("### 🗓️ Programação da Semana")
-                st.markdown(f"<div style='background-color: #e8f4f8; padding: 15px; border-left: 6px solid #ffc107; margin-bottom: 15px;'>🗣️ Fiquem atentos aos nossos próximos eventos:</div>", unsafe_allow_html=True)
-                
                 dias_nomes = ["Segunda-Feira", "Terça-Feira", "Quarta-Feira", "Quinta-Feira", "Sexta-Feira", "Sábado", "Domingo"]
-                
                 for i, nome_dia in enumerate(dias_nomes):
                     df_dia = df_semana[df_semana[col_data].dt.weekday == i]
                     if not df_dia.empty:
                         data_str = df_dia.iloc[0][col_data].strftime('%d/%m')
                         st.markdown(f"#### {nome_dia} ({data_str})")
-                        
                         for _, row in df_dia.iterrows():
-                            # --- LEITURA SEGURA (3 COLUNAS) ---
-                            # [0] Carimbo, [1] Data, [2] Descrição
-                            
-                            val_hora = limpar_hora(row.iloc[1]) # Tenta hora da coluna data
+                            val_hora = limpar_hora(row.iloc[1]) 
                             val_desc = row.iloc[2] if len(row) > 2 else "Evento"
-                            
                             st.markdown(f"""
                             <div class="agenda-card">
                                 <span class="agenda-col-c">{val_hora}</span>
                                 <span class="agenda-col-d">{val_desc}</span>
-                            </div>
-                            """, unsafe_allow_html=True)
-                st.markdown("---")
+                            </div>""", unsafe_allow_html=True)
     except: pass
-
-    # --- 3. OUTROS ---
-    areas = [
-        ("cadastro_ausencia", "📉 Ausências Justificadas", None),
-        ("cadastro_parabenizacao", "🎂 Aniversariantes", "Desejamos muitas felicidades!"),
-        ("cadastro_visitante", "🫂 Visitantes", "Sejam bem-vindos!"),
-        ("cadastro_oracao", "🙏 Pedidos de Oração", "Estaremos intercedendo.")   
-    ]
-    for nome, titulo, msg in areas:
-        try:
-            aba = sh.worksheet(nome)
-            d = aba.get_all_records()
-            if not d: continue
-            df = pd.DataFrame(d)
-            
-            if "Aprovação" in df.columns: 
-                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
-            
-            if nome in ["cadastro_visitante", "cadastro_ausencia"]:
-                df, c = converter_coluna_data(df)
-                df = df[df[c].dt.date == datetime.now().date()]
-
-            if not df.empty:
-                st.markdown(f"### {titulo}")
-                if msg: st.markdown(f"<div style='background-color: #e8f4f8; padding: 15px; border-left: 6px solid #ffc107; margin-bottom: 15px;'>🗣️ {msg}</div>", unsafe_allow_html=True)
-                st.dataframe(df.drop(columns=["Aprovação", "Carimbo de data/hora", "Timestamp", "Data", "Data do Evento"], errors='ignore'), use_container_width=True, hide_index=True)
-                st.markdown("---")
-        except: continue
 
 # --- MENU LATERAL ---
 with st.sidebar:
@@ -438,15 +485,15 @@ with st.sidebar:
 
 # --- ROTEAMENTO ---
 if selected == "Recados":
-    mostrar_tabela_gestao("cadastro_recados", "📌 Recados do Dia", "https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform?usp=publish-editor", filtrar_hoje=True)
+    mostrar_tabela_gestao("cadastro_recados", "📌 Recados do Dia", filtrar_hoje=True)
 elif selected == "Visitantes":
-    mostrar_tabela_gestao("cadastro_visitante", "Gestão de Visitantes (Dia)", "https://docs.google.com/forms/d/e/1FAIpQLScuFOyVP1p0apBrBc0yuOak2AnznpbVemts5JIDe0bawIQIqw/viewform?usp=header", filtrar_hoje=True)
+    mostrar_tabela_gestao("cadastro_visitante", "Gestão de Visitantes (Dia)", filtrar_hoje=True)
 elif selected == "Ausência":
-    mostrar_tabela_gestao("cadastro_ausencia", "Justificativas de Ausência (Dia)", "https://docs.google.com/forms/d/e/1FAIpQLSdlEV-UIY4L2ElRRL-uZqOUXiEtTfapQ0lkHbK1Fy-H1rcJag/viewform?usp=header", filtrar_hoje=True)
+    mostrar_tabela_gestao("cadastro_ausencia", "Justificativas de Ausência (Dia)", filtrar_hoje=True)
 elif selected == "Oração":
-    mostrar_tabela_gestao("cadastro_oracao", "Gestão de Orações", "https://docs.google.com/forms/d/e/1FAIpQLSe8W9x1Q9AwlSXytO3NDFvi2SgMKpfC6ICTVhMVH92S48KyyQ/viewform?usp=publish-editor") 
+    mostrar_tabela_gestao("cadastro_oracao", "Gestão de Orações") 
 elif selected == "Parabenização":
-    mostrar_tabela_gestao("cadastro_parabenizacao", "Parabenizações", "https://docs.google.com/forms/d/e/1FAIpQLSdI4ConKeN9T1iKFHTgtO89f71vMXdjrbmdbb20zGK0nMUDtw/viewform?usp=publish-editor")
+    mostrar_tabela_gestao("cadastro_parabenizacao", "Parabenizações")
 elif selected == "Programação":
     gerenciar_programacao()
 elif selected == "Apresentação":
