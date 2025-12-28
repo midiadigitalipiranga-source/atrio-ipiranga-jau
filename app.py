@@ -9,12 +9,15 @@ import time
 # --- CONFIGURAÇÃO DA PÁGINA (TELA CHEIA) ---
 st.set_page_config(page_title="Átrio - Recepção", layout="wide")
 
-# --- CSS PERSONALIZADO (MANTENDO O ORIGINAL + ESTILO PARA AGENDA) ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
 <style>
     /* Estilo Original da Barra Lateral e Fundo */
     [data-testid="stSidebar"] { background-color: #0e2433; }
+    
+    /* Força cor branca em todos os elementos da sidebar */
     [data-testid="stSidebar"] * { color: white !important; }
+    
     .stApp { background-color: #f0f2f6; }
     
     /* Botões Amarelos */
@@ -26,7 +29,7 @@ st.markdown("""
     /* Títulos */
     h3 { color: #0e2433; border-left: 5px solid #ffc107; padding-left: 10px; }
 
-    /* --- NOVO: Estilo para os Cards da Agenda (Letras Maiores) --- */
+    /* --- Estilo para os Cards da Agenda --- */
     .agenda-card {
         background-color: white;
         padding: 20px;
@@ -106,15 +109,25 @@ def conectar():
     sh = gc.open_by_key(KEY)
     return sh
 
-# --- FUNÇÃO AUXILIAR: FILTRAR SEMANA (SEGUNDA A DOMINGO) ---
+# --- FUNÇÃO AUXILIAR: LIMPAR HORA (REMOVE DATA E SEGUNDOS) ---
+def limpar_hora(valor):
+    valor = str(valor).strip()
+    # Se tiver espaço (ex: "2025-01-01 19:30:00"), pega só a parte final
+    if " " in valor:
+        valor = valor.split(" ")[-1]
+    # Se for muito longo (ex: "19:30:00"), pega só os 5 primeiros chars ("19:30")
+    if len(valor) > 5:
+        valor = valor[:5]
+    return valor
+
+# --- FUNÇÃO AUXILIAR: FILTRAR SEMANA ---
 def filtrar_proxima_semana(df):
-    # Procura coluna de Data do Evento (geralmente coluna B ou nome contendo 'Data')
     coluna_data = None
     for col in df.columns:
-        if "Data" in col and "Carimbo" not in col: # Tenta achar "Data do Evento" primeiro
+        if "Data" in col and "Carimbo" not in col:
             coluna_data = col
             break
-    if not coluna_data: # Se não achar, pega a primeira de data
+    if not coluna_data:
         for col in df.columns:
             if "Data" in col or "Carimbo" in col:
                 coluna_data = col
@@ -123,23 +136,20 @@ def filtrar_proxima_semana(df):
     if not coluna_data:
         return pd.DataFrame(), None
 
-    # Converte e Filtra
     df[coluna_data] = pd.to_datetime(df[coluna_data], dayfirst=True, errors='coerce')
     df = df.dropna(subset=[coluna_data])
 
     hoje = datetime.now().date()
-    # Calcula próxima Segunda-feira
     dias_para_segunda = (0 - hoje.weekday() + 7) % 7
     inicio_semana = hoje + timedelta(days=dias_para_segunda)
-    fim_semana = inicio_semana + timedelta(days=6) # Domingo
+    fim_semana = inicio_semana + timedelta(days=6)
 
-    # Filtra
     df_semana = df[(df[coluna_data].dt.date >= inicio_semana) & (df[coluna_data].dt.date <= fim_semana)]
     df_semana = df_semana.sort_values(by=coluna_data)
     
     return df_semana, coluna_data
 
-# --- FUNÇÃO AUXILIAR GERAL (VISITANTES, RECADOS, ETC) ---
+# --- FUNÇÃO AUXILIAR GERAL ---
 def converter_coluna_data(df):
     coluna_data = None
     possiveis_nomes = ["Carimbo de data/hora", "Timestamp", "Data", "Date"]
@@ -205,7 +215,7 @@ def mostrar_tabela_gestao(nome_aba_sheets, titulo_na_tela, link_forms=None, filt
              if link_forms: st.link_button(f"➕ Novo Cadastro", link_forms)
     except Exception as e: st.error(f"Erro: {e}")
 
-# --- FUNÇÃO NOVA: GESTÃO DA PROGRAMAÇÃO (AGENDA SEMANAL) ---
+# --- FUNÇÃO GESTÃO DA PROGRAMAÇÃO ---
 def gerenciar_programacao():
     st.header("🗓️ Programação da Semana (Segunda a Domingo)")
     
@@ -222,14 +232,12 @@ def gerenciar_programacao():
         return
 
     df = pd.DataFrame(dados)
-    
-    # 1. VISUALIZAÇÃO COM FILTRO E LETRAS GRANDES
     st.markdown("### 👁️ Visualização da Próxima Semana")
     
     df_semana, col_data_filtro = filtrar_proxima_semana(df.copy())
     
     if df_semana.empty:
-        st.info("Nenhum evento encontrado para a semana que vem (Segunda a Domingo).")
+        st.info("Nenhum evento encontrado para a semana que vem.")
     else:
         dias_nomes = ["Segunda-Feira", "Terça-Feira", "Quarta-Feira", "Quinta-Feira", "Sexta-Feira", "Sábado", "Domingo"]
         
@@ -240,15 +248,11 @@ def gerenciar_programacao():
                 data_str = df_dia.iloc[0][col_data_filtro].strftime('%d/%m')
                 st.markdown(f"#### {nome_dia} - {data_str}")
                 
-                # EXIBINDO COLUNAS A, C e D (Indices 0, 2, 3)
-                # Assumindo que o DF tem estrutura do Forms: [0]=Timestamp, [1]=Data, [2]=Horário, [3]=Evento/Desc
-                # Vamos pegar pelo índice para garantir A, C, D
-                
                 for _, row in df_dia.iterrows():
-                    # Pega valores por posição (A, C, D correspondem a 0, 2, 3 no python)
-                    val_a = row.iloc[0] # Coluna A
-                    val_c = row.iloc[2] # Coluna C (Geralmente Horário)
-                    val_d = row.iloc[3] # Coluna D (Geralmente Evento)
+                    val_a = row.iloc[0]
+                    # Limpa a hora aqui
+                    val_c = limpar_hora(row.iloc[2])
+                    val_d = row.iloc[3]
                     
                     st.markdown(f"""
                     <div class="agenda-card">
@@ -257,18 +261,14 @@ def gerenciar_programacao():
                         <div class="agenda-col-a">Detalhes: {val_a}</div>
                     </div>
                     """, unsafe_allow_html=True)
-
     st.markdown("---")
     
-    # 2. EDIÇÃO COMPLETA
     with st.expander("✏️ Editar Agenda (Tabela Completa)"):
         coluna_status = "Aprovação"
         if "Status" in df.columns: coluna_status = "Status"
         elif "Aprovação" not in df.columns: df["Aprovação"] = ""
-        
         cols = [coluna_status] + [c for c in df.columns if c != coluna_status]
         df = df[cols]
-
         df_editado = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="edit_agenda")
         
         col1, col2 = st.columns([1, 4])
@@ -280,7 +280,6 @@ def gerenciar_programacao():
                 st.success("Salvo!")
         with col2:
             st.link_button("➕ Novo Evento", link_forms)
-
 
 # --- FUNÇÃO APRESENTAÇÃO ---
 def mostrar_apresentacao():
@@ -295,13 +294,12 @@ def mostrar_apresentacao():
     
     sh = conectar()
     
-    # --- 1. RECADOS (Com Saudação) ---
+    # --- 1. RECADOS ---
     try:
         aba = sh.worksheet("cadastro_recados")
         dados = aba.get_all_records()
         if dados:
             df = pd.DataFrame(dados)
-            # Filtros
             df, col_data = converter_coluna_data(df)
             hoje = datetime.now().date()
             df = df[df[col_data].dt.date == hoje]
@@ -316,7 +314,7 @@ def mostrar_apresentacao():
                 st.markdown("---")
     except: pass
 
-    # --- 2. PROGRAMAÇÃO SEMANAL (Lógica Nova) ---
+    # --- 2. PROGRAMAÇÃO SEMANAL ---
     try:
         aba = sh.worksheet("cadastro_agenda_semanal")
         dados = aba.get_all_records()
@@ -339,9 +337,9 @@ def mostrar_apresentacao():
                         st.markdown(f"#### {nome_dia} ({data_str})")
                         
                         for _, row in df_dia.iterrows():
-                            # Exibindo Colunas A, C, D com destaque
                             val_a = row.iloc[0]
-                            val_c = row.iloc[2]
+                            # Limpa a hora aqui também
+                            val_c = limpar_hora(row.iloc[2])
                             val_d = row.iloc[3]
                             
                             st.markdown(f"""
@@ -386,7 +384,12 @@ with st.sidebar:
     st.markdown("---")
     selected = option_menu(None, ["Recados", "Visitantes", "Ausência", "Oração", "Parabenização", "Programação", "---", "Apresentação"], 
         icons=["megaphone", "people", "x-circle", "heart", "star", "calendar", "", "cast"], default_index=0,
-        styles={"container": {"background-color": "#0e2433"}, "nav-link-selected": {"background-color": "#ffc107", "color": "#0e2433"}})
+        styles={
+            "container": {"background-color": "#0e2433"},
+            "icon": {"color": "orange", "font-size": "20px"},
+            "nav-link": {"color": "white", "font-size": "16px", "text-align": "left", "margin": "0px"}, # TEXTO BRANCO FORÇADO
+            "nav-link-selected": {"background-color": "#ffc107", "color": "#0e2433"}
+        })
 
 # --- ROTEAMENTO ---
 if selected == "Recados":
@@ -400,6 +403,6 @@ elif selected == "Oração":
 elif selected == "Parabenização":
     mostrar_tabela_gestao("cadastro_parabenizacao", "Parabenizações", "https://docs.google.com/forms/d/e/1FAIpQLSdI4ConKeN9T1iKFHTgtO89f71vMXdjrbmdbb20zGK0nMUDtw/viewform?usp=publish-editor")
 elif selected == "Programação":
-    gerenciar_programacao() # LÓGICA NOVA AQUI
+    gerenciar_programacao()
 elif selected == "Apresentação":
     mostrar_apresentacao()
