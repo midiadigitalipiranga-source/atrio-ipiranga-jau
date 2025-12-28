@@ -378,14 +378,21 @@ def mostrar_apresentacao():
             if not df.empty:
                 st.markdown("### 🫂 Visitantes")
                 for _, row in df.iterrows():
+                    # Mapeamento: Col C [index 2], Col D [index 3], Col E [index 4]
+                    val_nome = row.iloc[2]
+                    val_convite = row.iloc[3]
+                    val_igreja = row.iloc[4]
+                    
                     st.markdown(f"""
                     <div class="agenda-card">
-                        <div class="texto-destaque" style="color: #ffc107; background-color: #0e2433; display: inline-block; padding: 2px 10px; border-radius: 5px;">{row.get('Nome do visitante', '')}</div>
-                        <div class="texto-normal" style="margin-top:10px;">Convidado por: <b>{row.get('Quem convidou', '')}</b></div>
-                        <div class="agenda-col-a">Igreja: {row.get('Algum ministério/denominação', '')}</div>
+                        <div class="texto-destaque" style="font-size: 32px; color: #0e2433;">{val_nome}</div>
+                        <div class="texto-normal" style="font-size: 22px; color: #ffc107; background-color: #0e2433; display: inline-block; padding: 2px 10px; border-radius: 5px; margin-top: 5px;">
+                            Convite de: {val_convite} | {val_igreja}
+                        </div>
                     </div>""", unsafe_allow_html=True)
                 st.markdown("---")
     except: pass
+
 
     # --- 3. AUSÊNCIA ---
     try:
@@ -411,7 +418,7 @@ def mostrar_apresentacao():
     except: pass
 
     # --- 4. ORAÇÃO ---
-    try:
+     try:
         aba = sh.worksheet("cadastro_oracao")
         dados = aba.get_all_records()
         if dados:
@@ -421,13 +428,25 @@ def mostrar_apresentacao():
             
             if not df.empty:
                 st.markdown("### 🙏 Pedidos de Oração")
-                for _, row in df.iterrows():
-                    st.markdown(f"""
-                    <div class="agenda-card" style="border-left: 8px solid #ffc107;">
-                        <div class="texto-destaque">Oração para: {row.get('Oração destinada a', '')}</div>
-                        <div class="texto-normal"><b>Motivo:</b> {row.get('Motivo da oração', '')}</div>
-                        <div class="agenda-col-a">Obs: {row.get('Observação', '')}</div>
-                    </div>""", unsafe_allow_html=True)
+                
+                # Agrupando pela Coluna C (Motivo da Oração - index 2)
+                motivos = df.iloc[:, 2].unique()
+                
+                for motivo in motivos:
+                    st.markdown(f"<h4 style='color: #0e2433; border-bottom: 2px solid #ffc107;'>🎯 Motivo: {motivo}</h4>", unsafe_allow_html=True)
+                    df_motivo = df[df.iloc[:, 2] == motivo]
+                    
+                    for _, row in df_motivo.iterrows():
+                        # Mapeamento: Col B [index 1], Col C [index 2], Col D [index 3]
+                        val_quem = row.iloc[1]
+                        val_obs = row.iloc[3]
+                        
+                        st.markdown(f"""
+                        <div class="agenda-card" style="border-left: 8px solid #ffc107;">
+                            <div class="texto-destaque" style="font-size: 28px;">{val_quem}</div>
+                            <div class="texto-normal" style="font-size: 20px;"><b>Finalidade:</b> {motivo}</div>
+                            <div class="agenda-col-a" style="font-size: 16px;">Obs: {val_obs}</div>
+                        </div>""", unsafe_allow_html=True)
                 st.markdown("---")
     except: pass
 
