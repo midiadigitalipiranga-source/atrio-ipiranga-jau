@@ -9,15 +9,12 @@ import time
 # --- CONFIGURAÇÃO DA PÁGINA (TELA CHEIA) ---
 st.set_page_config(page_title="Átrio - Recepção", layout="wide")
 
-# --- CSS PERSONALIZADO ---
+# --- CSS PERSONALIZADO (VISUAL MELHORADO PARA APRESENTAÇÃO) ---
 st.markdown("""
 <style>
     /* Estilo Original da Barra Lateral e Fundo */
     [data-testid="stSidebar"] { background-color: #0e2433; }
-    
-    /* Força cor branca em todos os elementos da sidebar */
     [data-testid="stSidebar"] * { color: white !important; }
-    
     .stApp { background-color: #f0f2f6; }
     
     /* Botões Amarelos */
@@ -29,37 +26,51 @@ st.markdown("""
     /* Títulos */
     h3 { color: #0e2433; border-left: 5px solid #ffc107; padding-left: 10px; }
 
-    /* --- Estilo para os Cards da Agenda --- */
-    .agenda-card {
+    /* --- ESTILO DOS CARDS (AGENDA E GERAL) --- */
+    .info-card {
         background-color: white;
         padding: 20px;
-        border-radius: 10px;
-        border-left: 8px solid #0e2433; /* Detalhe azul */
+        border-radius: 12px;
+        border-left: 10px solid #0e2433; /* Detalhe azul */
         margin-bottom: 15px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .agenda-col-c { /* Horário/Destaque */
-        font-size: 24px; 
-        font-weight: bold; 
-        color: #ffc107; /* Amarelo */
-        background-color: #0e2433; /* Fundo Azul */
-        padding: 5px 10px;
-        border-radius: 5px;
-        margin-right: 10px;
-        min-width: 80px;
-        text-align: center;
-        display: inline-block;
-    }
-    .agenda-col-d { /* Evento/Principal */
-        font-size: 22px; 
-        font-weight: bold; 
+    
+    /* Texto Principal (Nome, Evento) */
+    .card-main-text {
+        font-size: 26px; 
+        font-weight: 800; 
         color: #0e2433;
+        line-height: 1.2;
     }
-    .agenda-col-a { /* Detalhe extra/Data */
-        font-size: 16px; 
-        color: #666;
+    
+    /* Texto Secundário (Detalhes, Motivo) */
+    .card-sub-text {
+        font-size: 18px; 
+        color: #555;
         margin-top: 5px;
+    }
+
+    /* Destaque de Hora/Data (Amarelo) */
+    .card-highlight {
+        font-size: 20px; 
+        font-weight: bold; 
+        color: #0e2433; /* Texto azul */
+        background-color: #ffc107; /* Fundo Amarelo */
+        padding: 5px 12px;
+        border-radius: 6px;
+        display: inline-block;
+        margin-bottom: 8px;
+    }
+    
+    /* Texto de Recado (Corpo do texto) */
+    .recado-text {
+        font-size: 24px;
         font-style: italic;
+        color: #333;
+        border-left: 4px solid #ddd;
+        padding-left: 15px;
+        margin-top: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -117,25 +128,24 @@ def limpar_hora(valor):
     valor = str(valor).strip()
     if " " in valor:
         try:
-            # Tenta pegar a hora se for formato datetime "YYYY-MM-DD HH:MM:SS"
             parte_hora = valor.split(" ")[-1]
             if ":" in parte_hora:
-                return parte_hora[:5] # Retorna HH:MM
+                return parte_hora[:5]
         except: pass
-    return "⏰" # Retorna ícone se não achar hora
+    return "⏰"
 
 # --- FUNÇÃO AUXILIAR: FILTRAR SEMANA ---
 def filtrar_proxima_semana(df):
-    # Procura especificamente a coluna "Data do Evento" ou que tenha "Data"
     coluna_data = None
     for col in df.columns:
         if "Data" in col and "Carimbo" not in col:
             coluna_data = col
             break
-    
-    # Se não achou, pega a coluna índice 1 (assumindo que 0 é timestamp)
-    if not coluna_data and len(df.columns) > 1:
-        coluna_data = df.columns[1]
+    if not coluna_data:
+        for col in df.columns:
+            if "Data" in col or "Carimbo" in col:
+                coluna_data = col
+                break
     
     if not coluna_data:
         return pd.DataFrame(), None
@@ -183,7 +193,6 @@ def mostrar_tabela_gestao(nome_aba_sheets, titulo_na_tela, link_forms=None, filt
         if "Status" in df_full.columns: coluna_status = "Status"
         elif "Aprovação" not in df_full.columns: df_full["Aprovação"] = ""
 
-        # Checkbox Reprovar
         df_full["Reprovar?"] = df_full[coluna_status].astype(str).str.contains("Reprovado", case=False, na=False)
         cols = ["Reprovar?"] + [c for c in df_full.columns if c != "Reprovar?" and c != coluna_status]
         df_full = df_full[cols]
@@ -230,7 +239,7 @@ def mostrar_tabela_gestao(nome_aba_sheets, titulo_na_tela, link_forms=None, filt
              if link_forms: st.link_button(f"➕ Novo Cadastro", link_forms)
     except Exception as e: st.error(f"Erro: {e}")
 
-# --- FUNÇÃO GESTÃO DA PROGRAMAÇÃO (3 COLUNAS) ---
+# --- FUNÇÃO GESTÃO DA PROGRAMAÇÃO ---
 def gerenciar_programacao():
     st.header("🗓️ Programação da Semana (Segunda a Domingo)")
     
@@ -251,7 +260,6 @@ def gerenciar_programacao():
     
     df_semana, col_data_filtro = filtrar_proxima_semana(df.copy())
     
-    # Filtro Aprovação (se existir a coluna, usa. Se não, mostra tudo)
     if "Aprovação" in df_semana.columns:
         df_semana = df_semana[~df_semana["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
     
@@ -265,22 +273,12 @@ def gerenciar_programacao():
                 data_str = df_dia.iloc[0][col_data_filtro].strftime('%d/%m')
                 st.markdown(f"#### {nome_dia} - {data_str}")
                 for _, row in df_dia.iterrows():
-                    # --- CORREÇÃO DEFINITIVA (3 COLUNAS) ---
-                    # Layout: [0] Carimbo, [1] Data, [2] Descrição
-                    
-                    val_timestamp = row.iloc[0] # Índice 0
-                    
-                    # Tenta pegar hora da coluna de data (índice 1) ou põe ícone
-                    val_hora_destaque = limpar_hora(row.iloc[1]) 
-                    
-                    # Descrição é a coluna 2 (índice 2)
-                    # Verifica se existe coluna 2 para não dar erro IndexOutOfRange
-                    val_descricao = row.iloc[2] if len(row) > 2 else "Evento sem descrição"
-                    
+                    val_c = limpar_hora(row.iloc[1]) # Tenta hora da coluna data
+                    val_desc = row.iloc[2] if len(row) > 2 else "Evento"
                     st.markdown(f"""
-                    <div class="agenda-card">
-                        <span class="agenda-col-c">{val_hora_destaque}</span>
-                        <span class="agenda-col-d">{val_descricao}</span>
+                    <div class="info-card">
+                        <span class="card-highlight">{val_c}</span>
+                        <div class="card-main-text">{val_desc}</div>
                     </div>""", unsafe_allow_html=True)
     st.markdown("---")
     
@@ -320,7 +318,7 @@ def gerenciar_programacao():
         with col2:
             st.link_button("➕ Novo Evento", link_forms)
 
-# --- FUNÇÃO APRESENTAÇÃO ---
+# --- FUNÇÃO APRESENTAÇÃO (VISUAL NOVO: CARDS) ---
 def mostrar_apresentacao():
     st.markdown("## 📢 Resumo do Dia")
     st.markdown(f"**Data:** {datetime.now().strftime('%d/%m/%Y')}")
@@ -349,9 +347,16 @@ def mostrar_apresentacao():
             if not df.empty:
                 st.markdown("""<div style='text-align: center; background-color: #0e2433; color: #ffc107; padding: 10px; border-radius: 10px; margin-bottom: 20px; font-size: 20px; font-weight: bold;'>👋 "Cumprimento a igreja com a paz do Senhor!"</div>""", unsafe_allow_html=True)
                 st.markdown("### 📌 Recados e Avisos")
-                st.markdown(f"<div style='background-color: #e8f4f8; padding: 15px; border-left: 6px solid #ffc107; margin-bottom: 15px;'>🗣️ Atenção para os recados do dia:</div>", unsafe_allow_html=True)
-                cols_drop = ["Aprovação", "Carimbo de data/hora", "Timestamp", "Data"]
-                st.dataframe(df.drop(columns=cols_drop, errors='ignore'), use_container_width=True, hide_index=True)
+                
+                # LOOP PARA CRIAR CARDS DE RECADOS
+                for _, row in df.iterrows():
+                    # Geralmente Coluna 2 é o recado
+                    texto_recado = row.iloc[2] if len(row) > 2 else "Sem texto"
+                    st.markdown(f"""
+                    <div class="info-card">
+                        <div class="recado-text">"{texto_recado}"</div>
+                    </div>
+                    """, unsafe_allow_html=True)
                 st.markdown("---")
     except: pass
 
@@ -368,7 +373,6 @@ def mostrar_apresentacao():
             
             if not df_semana.empty:
                 st.markdown("### 🗓️ Programação da Semana")
-                st.markdown(f"<div style='background-color: #e8f4f8; padding: 15px; border-left: 6px solid #ffc107; margin-bottom: 15px;'>🗣️ Fiquem atentos aos nossos próximos eventos:</div>", unsafe_allow_html=True)
                 
                 dias_nomes = ["Segunda-Feira", "Terça-Feira", "Quarta-Feira", "Quinta-Feira", "Sexta-Feira", "Sábado", "Domingo"]
                 
@@ -379,31 +383,28 @@ def mostrar_apresentacao():
                         st.markdown(f"#### {nome_dia} ({data_str})")
                         
                         for _, row in df_dia.iterrows():
-                            # --- LEITURA SEGURA (3 COLUNAS) ---
-                            # [0] Carimbo, [1] Data, [2] Descrição
-                            
-                            val_hora = limpar_hora(row.iloc[1]) # Tenta hora da coluna data
+                            val_c = limpar_hora(row.iloc[1])
                             val_desc = row.iloc[2] if len(row) > 2 else "Evento"
                             
                             st.markdown(f"""
-                            <div class="agenda-card">
-                                <span class="agenda-col-c">{val_hora}</span>
-                                <span class="agenda-col-d">{val_desc}</span>
+                            <div class="info-card">
+                                <span class="card-highlight">{val_c}</span>
+                                <div class="card-main-text">{val_desc}</div>
                             </div>
                             """, unsafe_allow_html=True)
                 st.markdown("---")
     except: pass
 
-    # --- 3. OUTROS ---
+    # --- 3. OUTROS (VISITANTES, PARABENS, ETC) - AGORA COM CARDS ---
     areas = [
-        ("cadastro_ausencia", "📉 Ausências Justificadas", None),
-        ("cadastro_parabenizacao", "🎂 Aniversariantes", "Desejamos muitas felicidades!"),
-        ("cadastro_visitante", "🫂 Visitantes", "Sejam bem-vindos!"),
-        ("cadastro_oracao", "🙏 Pedidos de Oração", "Estaremos intercedendo.")   
+        ("cadastro_ausencia", "📉 Ausências Justificadas"),
+        ("cadastro_parabenizacao", "🎂 Aniversariantes"),
+        ("cadastro_visitante", "🫂 Visitantes"),
+        ("cadastro_oracao", "🙏 Pedidos de Oração")   
     ]
-    for nome, titulo, msg in areas:
+    for nome_aba, titulo in areas:
         try:
-            aba = sh.worksheet(nome)
+            aba = sh.worksheet(nome_aba)
             d = aba.get_all_records()
             if not d: continue
             df = pd.DataFrame(d)
@@ -411,14 +412,34 @@ def mostrar_apresentacao():
             if "Aprovação" in df.columns: 
                 df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
             
-            if nome in ["cadastro_visitante", "cadastro_ausencia"]:
+            if nome_aba in ["cadastro_visitante", "cadastro_ausencia"]:
                 df, c = converter_coluna_data(df)
                 df = df[df[c].dt.date == datetime.now().date()]
 
             if not df.empty:
                 st.markdown(f"### {titulo}")
-                if msg: st.markdown(f"<div style='background-color: #e8f4f8; padding: 15px; border-left: 6px solid #ffc107; margin-bottom: 15px;'>🗣️ {msg}</div>", unsafe_allow_html=True)
-                st.dataframe(df.drop(columns=["Aprovação", "Carimbo de data/hora", "Timestamp", "Data", "Data do Evento"], errors='ignore'), use_container_width=True, hide_index=True)
+                
+                for _, row in df.iterrows():
+                    # Lógica inteligente para achar Nome e Detalhe
+                    # Geralmente: [0]Timestamp, [1]Nome, [2]Detalhe/Data
+                    
+                    val_principal = row.iloc[1] if len(row) > 1 else "" # Nome
+                    val_secundario = ""
+                    
+                    if len(row) > 2:
+                        val_secundario = str(row.iloc[2]) # Motivo, Data Nasc, Pedido Oração
+                    
+                    # Se for Aniversário, formata a data se possível
+                    if nome_aba == "cadastro_parabenizacao" and len(val_secundario) > 5:
+                        val_secundario = f"Data: {val_secundario}"
+
+                    st.markdown(f"""
+                    <div class="info-card">
+                        <div class="card-main-text">{val_principal}</div>
+                        <div class="card-sub-text">{val_secundario}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
                 st.markdown("---")
         except: continue
 
