@@ -418,7 +418,7 @@ def mostrar_apresentacao():
     except: pass
 
     # --- 4. ORAÇÃO ---
-     try:
+    try:
         aba = sh.worksheet("cadastro_oracao")
         dados = aba.get_all_records()
         if dados:
