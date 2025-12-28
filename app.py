@@ -488,16 +488,39 @@ with st.sidebar:
 
 # --- ROTEAMENTO ---
 if selected == "Recados":
-    mostrar_tabela_gestao("cadastro_recados", "📌 Recados do Dia", filtrar_hoje=True)
+    mostrar_tabela_gestao(
+        "cadastro_recados", 
+        "📌 Recados do Dia", 
+        link_forms="LINK_DO_FORMS_DE_RECADO", 
+        filtrar_hoje=True
+    )
 elif selected == "Visitantes":
-    mostrar_tabela_gestao("cadastro_visitante", "Gestão de Visitantes (Dia)", filtrar_hoje=True)
+    mostrar_tabela_gestao(
+        "cadastro_visitante", 
+        "Gestão de Visitantes (Dia)", 
+        link_forms="LINK_DO_FORMS_DE_VISITANTES", 
+        filtrar_hoje=True
+    )
 elif selected == "Ausência":
-    mostrar_tabela_gestao("cadastro_ausencia", "Justificativas de Ausência (Dia)", filtrar_hoje=True)
+    mostrar_tabela_gestao(
+        "cadastro_ausencia", 
+        "Justificativas de Ausência (Dia)", 
+        link_forms="LINK_DO_FORMS_DE_AUSENCIA", 
+        filtrar_hoje=True
+    )
 elif selected == "Oração":
-    mostrar_tabela_gestao("cadastro_oracao", "Gestão de Orações") 
+    mostrar_tabela_gestao(
+        "cadastro_oracao", 
+        "Gestão de Orações", 
+        link_forms="LINK_DO_FORMS_DE_ORACAO"
+    ) 
 elif selected == "Parabenização":
-    mostrar_tabela_gestao("cadastro_parabenizacao", "Parabenizações")
+    mostrar_tabela_gestao(
+        "cadastro_parabenizacao", 
+        "Parabenizações", 
+        link_forms="LINK_DO_FORMS_DE_PARABENIZACAO"
+    )
 elif selected == "Programação":
-    gerenciar_programacao()
+    gerenciar_programacao() # Esta função já possui o link interno no seu código
 elif selected == "Apresentação":
     mostrar_apresentacao()
