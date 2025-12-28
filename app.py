@@ -98,6 +98,19 @@ def tela_login():
                     st.error("Senha incorreta!")
             except:
                 st.error("Erro: Senha não configurada no Secrets.")
+        
+        # --- LINKS LIVRES NA TELA DE LOGIN ---
+        st.markdown("---")
+        st.markdown("<p style='text-align: center;'>Cadastros Públicos (Não requer senha):</p>", unsafe_allow_html=True)
+        
+        # Exemplo de botões livres
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            st.link_button("🫂 Visitante", "LINK_DO_FORMS_DE_VISITANTES", use_container_width=True)
+            st.link_button("🙏 Oração", "LINK_DO_FORMS_DE_ORACAO", use_container_width=True)
+        with col_f2:
+            st.link_button("📌 Recados", "LINK_DO_FORMS_DE_RECADO", use_container_width=True)
+            st.link_button("🎂 Parabéns", "LINK_DO_FORMS_DE_PARABENIZACAO", use_container_width=True)
 
 if not st.session_state["logado"]:
     tela_login()
