@@ -340,10 +340,13 @@ def mostrar_apresentacao():
                 st.markdown("""<div style='text-align: center; background-color: #0e2433; color: #ffc107; padding: 10px; border-radius: 10px; margin-bottom: 20px; font-size: 20px; font-weight: bold;'>👋 "Cumprimento a igreja com a paz do Senhor!"</div>""", unsafe_allow_html=True)
                 st.markdown("### 📌 Recados e Avisos")
                 for _, row in df.iterrows():
+                    # PASSO 1: Correção Recados - Coluna [C] (índice 2) destaque, Coluna [B] (índice 1) normal
+                    val_subtitulo = row.iloc[1] # Coluna B
+                    val_titulo = row.iloc[2]    # Coluna C
                     st.markdown(f"""
                     <div class="agenda-card">
-                        <div class="texto-normal">Pede o recado: {row.get('Quem pede o recado', '')}</div>
-                        <div class="texto-destaque" style="font-style: italic; margin-top:5px;">"{row.get('Qual o recado', '')}"</div>
+                        <div class="texto-destaque" style="font-style: italic;">"{val_titulo}"</div>
+                        <div class="texto-normal" style="margin-top:5px; font-size: 16px; color: #666;">Pede o recado: {val_subtitulo}</div>
                     </div>""", unsafe_allow_html=True)
                 st.markdown("---")
     except: pass
