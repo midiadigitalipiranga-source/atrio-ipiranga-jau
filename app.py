@@ -109,13 +109,11 @@ def conectar():
     sh = gc.open_by_key(KEY)
     return sh
 
-# --- FUNÇÃO AUXILIAR: LIMPAR HORA (REMOVE DATA E SEGUNDOS) ---
+# --- FUNÇÃO AUXILIAR: LIMPAR HORA ---
 def limpar_hora(valor):
     valor = str(valor).strip()
-    # Se tiver espaço (ex: "2025-01-01 19:30:00"), pega só a parte final
     if " " in valor:
         valor = valor.split(" ")[-1]
-    # Se for muito longo (ex: "19:30:00"), pega só os 5 primeiros chars ("19:30")
     if len(valor) > 5:
         valor = valor[:5]
     return valor
@@ -161,7 +159,7 @@ def converter_coluna_data(df):
     df[coluna_data] = pd.to_datetime(df[coluna_data], dayfirst=True, errors='coerce')
     return df, coluna_data
 
-# --- FUNÇÃO DE GESTÃO PADRÃO ---
+# --- FUNÇÃO DE GESTÃO PADRÃO (AGORA COM BOTÃO DE REPROVAR) ---
 def mostrar_tabela_gestao(nome_aba_sheets, titulo_na_tela, link_forms=None, filtrar_hoje=False):
     st.header(f"{titulo_na_tela}")
     try:
@@ -175,11 +173,18 @@ def mostrar_tabela_gestao(nome_aba_sheets, titulo_na_tela, link_forms=None, filt
             if link_forms: st.markdown("---"); st.link_button(f"➕ Novo Cadastro", link_forms); return
         else: df_full = pd.DataFrame(dados)
         
+        # Garante coluna de Aprovação
         coluna_status = "Aprovação"
         if "Status" in df_full.columns: coluna_status = "Status"
         elif "Aprovação" not in df_full.columns: df_full["Aprovação"] = ""
 
-        cols = [coluna_status] + [c for c in df_full.columns if c != coluna_status]
+        # --- LÓGICA DO BOTÃO "REPROVAR" ---
+        # Cria uma coluna booleana temporária "Reprovar?" baseada no texto existente
+        # Se contiver "Reprovado", marca como True. Se for vazio ou "Aprovado", é False.
+        df_full["Reprovar?"] = df_full[coluna_status].astype(str).str.contains("Reprovado", case=False, na=False)
+
+        # Organiza colunas: Reprovar primeiro
+        cols = ["Reprovar?"] + [c for c in df_full.columns if c != "Reprovar?" and c != coluna_status]
         df_full = df_full[cols]
 
         df_display = df_full.copy()
@@ -190,10 +195,21 @@ def mostrar_tabela_gestao(nome_aba_sheets, titulo_na_tela, link_forms=None, filt
             df_display = df_display[df_display[col_data_nome].dt.date == hoje]
             if df_display.empty: st.info(f"Nenhum registro encontrado para HOJE ({hoje.strftime('%d/%m/%Y')}).")
 
+        # --- TABELA EDITÁVEL ---
+        st.info("ℹ️ Novos itens já nascem Aprovados. Marque a caixa 'Reprovar?' e salve para remover da apresentação.")
+        
         df_editado_na_tela = st.data_editor(
-            df_display, num_rows="dynamic", use_container_width=True, key=f"editor_{nome_aba_sheets}",
+            df_display, 
+            num_rows="dynamic", 
+            use_container_width=True, 
+            key=f"editor_{nome_aba_sheets}",
             column_config={
-                coluna_status: st.column_config.SelectboxColumn("Status", options=["", "✅ Aprovado", "❌ Reprovado", "⚠️ Revisar"], required=True, width="medium"),
+                "Reprovar?": st.column_config.CheckboxColumn(
+                    "Reprovar?",
+                    help="Marque para remover este item da tela de apresentação",
+                    default=False,
+                    width="small"
+                ),
                 **( {col_data_nome: st.column_config.DateColumn("Data", format="DD/MM/YYYY")} if filtrar_hoje and not df_display.empty else {} )
             }
         )
@@ -203,19 +219,33 @@ def mostrar_tabela_gestao(nome_aba_sheets, titulo_na_tela, link_forms=None, filt
             with col1:
                 if st.button("💾 Salvar Alterações", key=f"btn_{nome_aba_sheets}"):
                     with st.spinner("Salvando..."):
+                        # Atualiza o dataframe original com as edições
                         df_final = df_full.copy()
                         df_final.update(df_editado_na_tela)
+                        
+                        # --- CONVERTE A COLUNA CHECKBOX DE VOLTA PARA TEXTO ---
+                        # Se Checkbox True -> "❌ Reprovado"
+                        # Se Checkbox False -> "✅ Aprovado" (Nascer Aprovado)
+                        df_final[coluna_status] = df_final["Reprovar?"].apply(lambda x: "❌ Reprovado" if x else "✅ Aprovado")
+                        
+                        # Remove a coluna temporária "Reprovar?" antes de salvar
+                        df_final = df_final.drop(columns=["Reprovar?"])
+                        
                         if filtrar_hoje: df_final = df_final.astype(str)
+                        
                         aba.clear()
+                        # Garante que o cabeçalho seja salvo corretamente
                         aba.update([df_final.columns.values.tolist()] + df_final.values.tolist())
                         st.success("Atualizado!")
+                        time.sleep(1)
+                        st.rerun()
             with col2:
                 if link_forms: st.link_button(f"➕ Novo Cadastro", link_forms)
         else:
              if link_forms: st.link_button(f"➕ Novo Cadastro", link_forms)
     except Exception as e: st.error(f"Erro: {e}")
 
-# --- FUNÇÃO GESTÃO DA PROGRAMAÇÃO ---
+# --- FUNÇÃO GESTÃO DA PROGRAMAÇÃO (COM BOTÃO REPROVAR) ---
 def gerenciar_programacao():
     st.header("🗓️ Programação da Semana (Segunda a Domingo)")
     
@@ -236,48 +266,67 @@ def gerenciar_programacao():
     
     df_semana, col_data_filtro = filtrar_proxima_semana(df.copy())
     
+    # Filtro visual para não mostrar reprovados na prévia
+    if "Aprovação" in df_semana.columns:
+        df_semana = df_semana[~df_semana["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
+    
     if df_semana.empty:
-        st.info("Nenhum evento encontrado para a semana que vem.")
+        st.info("Nenhum evento aprovado para a semana que vem.")
     else:
         dias_nomes = ["Segunda-Feira", "Terça-Feira", "Quarta-Feira", "Quinta-Feira", "Sexta-Feira", "Sábado", "Domingo"]
-        
         for i, nome_dia in enumerate(dias_nomes):
             df_dia = df_semana[df_semana[col_data_filtro].dt.weekday == i]
-            
             if not df_dia.empty:
                 data_str = df_dia.iloc[0][col_data_filtro].strftime('%d/%m')
                 st.markdown(f"#### {nome_dia} - {data_str}")
-                
                 for _, row in df_dia.iterrows():
                     val_a = row.iloc[0]
-                    # Limpa a hora aqui
                     val_c = limpar_hora(row.iloc[2])
                     val_d = row.iloc[3]
-                    
                     st.markdown(f"""
                     <div class="agenda-card">
                         <span class="agenda-col-c">{val_c}</span>
                         <span class="agenda-col-d">{val_d}</span>
-                        <div class="agenda-col-a">Detalhes: {val_a}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                        <div class="agenda-col-a">{val_a}</div>
+                    </div>""", unsafe_allow_html=True)
     st.markdown("---")
     
     with st.expander("✏️ Editar Agenda (Tabela Completa)"):
+        st.info("ℹ️ Novos itens já nascem Aprovados. Marque 'Reprovar?' para ocultar.")
+        
         coluna_status = "Aprovação"
         if "Status" in df.columns: coluna_status = "Status"
         elif "Aprovação" not in df.columns: df["Aprovação"] = ""
-        cols = [coluna_status] + [c for c in df.columns if c != coluna_status]
+        
+        # Cria coluna checkbox
+        df["Reprovar?"] = df[coluna_status].astype(str).str.contains("Reprovado", case=False, na=False)
+        cols = ["Reprovar?"] + [c for c in df.columns if c != "Reprovar?" and c != coluna_status]
         df = df[cols]
-        df_editado = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="edit_agenda")
+
+        df_editado = st.data_editor(
+            df, 
+            num_rows="dynamic", 
+            use_container_width=True, 
+            key="edit_agenda",
+            column_config={
+                "Reprovar?": st.column_config.CheckboxColumn("Reprovar?", width="small")
+            }
+        )
         
         col1, col2 = st.columns([1, 4])
         with col1:
             if st.button("💾 Salvar Agenda"):
-                df_final = df_editado.astype(str)
+                df_final = df_editado.copy()
+                # Reconverte Checkbox para Texto
+                df_final[coluna_status] = df_final["Reprovar?"].apply(lambda x: "❌ Reprovado" if x else "✅ Aprovado")
+                df_final = df_final.drop(columns=["Reprovar?"])
+                
+                df_final = df_final.astype(str)
                 aba.clear()
                 aba.update([df_final.columns.values.tolist()] + df_final.values.tolist())
                 st.success("Salvo!")
+                time.sleep(1)
+                st.rerun()
         with col2:
             st.link_button("➕ Novo Evento", link_forms)
 
@@ -294,6 +343,10 @@ def mostrar_apresentacao():
     
     sh = conectar()
     
+    # LÓGICA DE FILTRO "NASCER APROVADO":
+    # Mostra tudo, MENOS o que for explicitamente "Reprovado".
+    # Assim, campos vazios aparecem automaticamente.
+
     # --- 1. RECADOS ---
     try:
         aba = sh.worksheet("cadastro_recados")
@@ -303,7 +356,10 @@ def mostrar_apresentacao():
             df, col_data = converter_coluna_data(df)
             hoje = datetime.now().date()
             df = df[df[col_data].dt.date == hoje]
-            if "Aprovação" in df.columns: df = df[df["Aprovação"].astype(str).str.contains("Aprovado", case=False, na=False)]
+            
+            # FILTRO NOVO: Exclui apenas reprovados
+            if "Aprovação" in df.columns: 
+                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
             
             if not df.empty:
                 st.markdown("""<div style='text-align: center; background-color: #0e2433; color: #ffc107; padding: 10px; border-radius: 10px; margin-bottom: 20px; font-size: 20px; font-weight: bold;'>👋 "Cumprimento a igreja com a paz do Senhor!"</div>""", unsafe_allow_html=True)
@@ -320,7 +376,9 @@ def mostrar_apresentacao():
         dados = aba.get_all_records()
         if dados:
             df = pd.DataFrame(dados)
-            if "Aprovação" in df.columns: df = df[df["Aprovação"].astype(str).str.contains("Aprovado", case=False, na=False)]
+            # FILTRO NOVO
+            if "Aprovação" in df.columns: 
+                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
             
             df_semana, col_data = filtrar_proxima_semana(df)
             
@@ -338,7 +396,6 @@ def mostrar_apresentacao():
                         
                         for _, row in df_dia.iterrows():
                             val_a = row.iloc[0]
-                            # Limpa a hora aqui também
                             val_c = limpar_hora(row.iloc[2])
                             val_d = row.iloc[3]
                             
@@ -365,7 +422,11 @@ def mostrar_apresentacao():
             d = aba.get_all_records()
             if not d: continue
             df = pd.DataFrame(d)
-            if "Aprovação" in df.columns: df = df[df["Aprovação"].astype(str).str.contains("Aprovado", case=False, na=False)]
+            
+            # FILTRO NOVO: Mostra tudo exceto Reprovado
+            if "Aprovação" in df.columns: 
+                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
+            
             if nome in ["cadastro_visitante", "cadastro_ausencia"]:
                 df, c = converter_coluna_data(df)
                 df = df[df[c].dt.date == datetime.now().date()]
@@ -387,7 +448,7 @@ with st.sidebar:
         styles={
             "container": {"background-color": "#0e2433"},
             "icon": {"color": "orange", "font-size": "20px"},
-            "nav-link": {"color": "white", "font-size": "16px", "text-align": "left", "margin": "0px"}, # TEXTO BRANCO FORÇADO
+            "nav-link": {"color": "white", "font-size": "16px", "text-align": "left", "margin": "0px"},
             "nav-link-selected": {"background-color": "#ffc107", "color": "#0e2433"}
         })
 
