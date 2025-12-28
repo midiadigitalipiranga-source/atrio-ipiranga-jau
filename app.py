@@ -504,34 +504,34 @@ if selected == "Recados":
     mostrar_tabela_gestao(
         "cadastro_recados", 
         "📌 Recados do Dia", 
-        link_forms="LINK_DO_FORMS_DE_RECADO", 
+        link_forms="https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform?usp=headerLINK_DO_FORMS_DE_RECADO", 
         filtrar_hoje=True
     )
 elif selected == "Visitantes":
     mostrar_tabela_gestao(
         "cadastro_visitante", 
         "Gestão de Visitantes (Dia)", 
-        link_forms="LINK_DO_FORMS_DE_VISITANTES", 
+        link_forms="https://docs.google.com/forms/d/e/1FAIpQLScuFOyVP1p0apBrBc0yuOak2AnznpbVemts5JIDe0bawIQIqw/viewform?usp=header", 
         filtrar_hoje=True
     )
 elif selected == "Ausência":
     mostrar_tabela_gestao(
         "cadastro_ausencia", 
         "Justificativas de Ausência (Dia)", 
-        link_forms="LINK_DO_FORMS_DE_AUSENCIA", 
+        link_forms="https://docs.google.com/forms/d/e/1FAIpQLSdlEV-UIY4L2ElRRL-uZqOUXiEtTfapQ0lkHbK1Fy-H1rcJag/viewform?usp=header", 
         filtrar_hoje=True
     )
 elif selected == "Oração":
     mostrar_tabela_gestao(
         "cadastro_oracao", 
         "Gestão de Orações", 
-        link_forms="LINK_DO_FORMS_DE_ORACAO"
+        link_forms="https://docs.google.com/forms/d/e/1FAIpQLSe8W9x1Q9AwlSXytO3NDFvi2SgMKpfC6ICTVhMVH92S48KyyQ/viewform?usp=header"
     ) 
 elif selected == "Parabenização":
     mostrar_tabela_gestao(
         "cadastro_parabenizacao", 
         "Parabenizações", 
-        link_forms="LINK_DO_FORMS_DE_PARABENIZACAO"
+        link_forms="https://docs.google.com/forms/d/e/1FAIpQLSdI4ConKeN9T1iKFHTgtO89f71vMXdjrbmdbb20zGK0nMUDtw/viewform?usp=header"
     )
 elif selected == "Programação":
     gerenciar_programacao() # Esta função já possui o link interno no seu código
