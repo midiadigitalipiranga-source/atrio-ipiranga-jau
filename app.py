@@ -39,15 +39,6 @@ def tela_login():
                 st.session_state["logado"] = True
                 st.rerun()
             else: st.error("Senha incorreta!")
-        st.markdown("---")
-        st.markdown("<p style='text-align: center;'>Acesso Rápido aos Formulários:</p>", unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            st.link_button("🫂 Visitante", "https://docs.google.com/forms/d/e/1FAIpQLScuFOyVP1p0apBrBc0yuOak2AnznpbVemts5JIDe0bawIQIqw/viewform", use_container_width=True)
-            st.link_button("🙏 Oração", "https://docs.google.com/forms/d/e/1FAIpQLSe8W9x1Q9AwlSXytO3NDFvi2SgMKpfC6ICTVhMVH92S48KyyQ/viewform", use_container_width=True)
-        with c2:
-            st.link_button("📌 Recados", "https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform", use_container_width=True)
-            st.link_button("🎂 Parabéns", "https://docs.google.com/forms/d/e/1FAIpQLSdI4ConKeN9T1iKFHTgtO89f71vMXdjrbmdbb20zGK0nMUDtw/viewform", use_container_width=True)
 
 if not st.session_state["logado"]:
     tela_login()
@@ -61,7 +52,16 @@ def conectar():
     gc = gspread.service_account_from_dict(cred)
     return gc.open_by_key("16zFy51tlxGmS-HQklP9_Ath4ZCv-s7Cmd38ayAhGZ_I")
 
-# --- UTILITÁRIOS ---
+# --- UTILITÁRIOS DE DATA (CORRIGIDOS) ---
+def converter_coluna_data(df):
+    """Detecta e converte colunas de data para o formato datetime do Python de forma robusta."""
+    possiveis = ["Carimbo de data/hora", "Timestamp", "Data", "Date"]
+    col = next((c for c in df.columns if c in possiveis), df.columns[0])
+    
+    # Converte forçando o formato de data e removendo informações de fuso horário para comparação limpa
+    df[col] = pd.to_datetime(df[col], errors='coerce').dt.tz_localize(None)
+    return df, col
+
 def limpar_hora(valor):
     v = str(valor).strip()
     if " " in v:
@@ -70,21 +70,6 @@ def limpar_hora(valor):
             if ":" in h: return h[:5]
         except: pass
     return "⏰"
-
-def converter_coluna_data(df):
-    possiveis = ["Carimbo de data/hora", "Timestamp", "Data", "Date"]
-    col = next((c for c in df.columns if c in possiveis), df.columns[0])
-    df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
-    return df, col
-
-def filtrar_proxima_semana(df):
-    col = next((c for c in df.columns if "Data" in c and "Carimbo" not in c), df.columns[1])
-    df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
-    df = df.dropna(subset=[col])
-    hoje = datetime.now().date()
-    prox_segunda = hoje + timedelta(days=(0 - hoje.weekday() + 7) % 7)
-    df_s = df[(df[col].dt.date >= prox_segunda) & (df[col].dt.date <= prox_segunda + timedelta(days=6))].sort_values(by=col)
-    return df_s, col
 
 # --- FUNÇÃO DE GESTÃO ---
 def mostrar_tabela_gestao(aba_nome, titulo, link_forms=None, filtrar_hoje=False):
@@ -100,24 +85,33 @@ def mostrar_tabela_gestao(aba_nome, titulo, link_forms=None, filtrar_hoje=False)
             st.warning("Sem registros para exibir."); return
         
         df_full = pd.DataFrame(dados)
+        df_full, c_dt = converter_coluna_data(df_full) # Aplica conversão robusta
+        
         col_st = "Status" if "Status" in df_full.columns else "Aprovação"
         if col_st not in df_full.columns: df_full[col_st] = ""
         df_full["Reprovar?"] = df_full[col_st].astype(str).str.contains("Reprovado", case=False, na=False)
+        
         cols = ["Reprovar?"] + [c for c in df_full.columns if c not in ["Reprovar?", col_st]]
         df_full = df_full[cols]
 
         df_disp = df_full.copy()
         if filtrar_hoje:
-            df_disp, c_dt = converter_coluna_data(df_disp)
-            df_disp = df_disp[df_disp[c_dt].dt.date == datetime.now().date()]
-            if df_disp.empty: st.info("Nenhum registro para hoje."); return
+            hoje = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            df_disp = df_disp[df_disp[c_dt].dt.normalize() == hoje]
+            if df_disp.empty: 
+                st.info("Nenhum registro para hoje.")
+                return
 
-        ed = st.data_editor(df_disp, num_rows="dynamic", use_container_width=True, key=f"ed_{aba_nome}",
-                            column_config={"Reprovar?": st.column_config.CheckboxColumn(width="small")})
+        # Formata a visualização da data para o padrão BR na tabela de gestão
+        df_edit_view = df_disp.copy()
+        df_edit_view[c_dt] = df_edit_view[c_dt].dt.strftime('%d/%m/%Y %H:%M:%S')
+
+        ed = st.data_editor(df_edit_view, num_rows="dynamic", use_container_width=True, key=f"ed_{aba_nome}")
 
         if st.button("💾 Salvar Alterações", key=f"bt_{aba_nome}", use_container_width=True):
-            df_final = df_full.copy(); df_final.update(ed)
-            df_final[col_st] = df_final["Reprovar?"].apply(lambda x: "❌ Reprovado" if x else "✅ Aprovado")
+            df_final = df_full.copy()
+            # Atualiza apenas a coluna de reprovação baseada no editor
+            df_final.loc[df_disp.index, col_st] = ed["Reprovar?"].apply(lambda x: "❌ Reprovado" if x else "✅ Aprovado")
             df_final = df_final.drop(columns=["Reprovar?"]).astype(str)
             aba.clear(); aba.update([df_final.columns.tolist()] + df_final.values.tolist())
             st.success("Salvo!"); time.sleep(1); st.rerun()
@@ -130,50 +124,51 @@ def mostrar_apresentacao():
     st.markdown("---")
     
     sh = conectar()
-    hoje = datetime.now().date()
+    # Pega a data de hoje "limpa" (sem horas) para comparação
+    hoje = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
     # 1. RECADOS
     try:
         df = pd.DataFrame(sh.worksheet("cadastro_recados").get_all_records())
         if not df.empty:
             df, c_dt = converter_coluna_data(df)
-            # Filtro: Data de hoje E Aprovação
-            df = df[(df[c_dt].dt.date == hoje)]
+            # Normaliza a data da planilha para comparar apenas Dia/Mês/Ano
+            df = df[(df[c_dt].dt.normalize() == hoje)]
             df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", na=False)]
             
             if not df.empty:
                 st.markdown("### 📌 Recados e Avisos")
                 for _, r in df.iterrows():
-                    st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-style: italic;">"{r.iloc[2]}"</div><div class="texto-normal" style="font-size: 16px;">Solicitante: {r.iloc[1]}</div></div>', unsafe_allow_html=True)
-    except Exception as e: st.write("Recados: Sem dados para hoje")
+                    st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-style: italic;">"{r.iloc[3]}"</div><div class="texto-normal" style="font-size: 16px;">Solicitante: {r.iloc[2]}</div></div>', unsafe_allow_html=True)
+    except: pass
 
     # 2. VISITANTES
     try:
         df = pd.DataFrame(sh.worksheet("cadastro_visitante").get_all_records())
         if not df.empty:
             df, c_dt = converter_coluna_data(df)
-            df = df[(df[c_dt].dt.date == hoje)]
+            df = df[(df[c_dt].dt.normalize() == hoje)]
             df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", na=False)]
             
             if not df.empty:
                 st.markdown("### 🫂 Visitantes")
                 for _, r in df.iterrows():
                     st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 32px;">{r.iloc[2]}</div><div class="texto-normal" style="color: #ffc107; background-color: #0e2433; display: inline-block; padding: 2px 10px; border-radius: 5px;">{r.iloc[3]} | {r.iloc[4]}</div></div>', unsafe_allow_html=True)
-    except Exception as e: st.write("Visitantes: Sem dados para hoje")
+    except: pass
 
     # 3. AUSÊNCIA
     try:
         df = pd.DataFrame(sh.worksheet("cadastro_ausencia").get_all_records())
         if not df.empty:
             df, c_dt = converter_coluna_data(df)
-            df = df[(df[c_dt].dt.date == hoje)]
+            df = df[(df[c_dt].dt.normalize() == hoje)]
             df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", na=False)]
             
             if not df.empty:
                 st.markdown("### 📉 Ausências Justificadas")
                 for _, r in df.iterrows():
                     st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 30px;">{r.iloc[1]} - {r.iloc[2]}</div><div class="texto-normal" style="font-size: 22px;"><b>Motivo:</b> {r.iloc[3]}</div><div class="texto-normal" style="font-size: 16px; font-style: italic;">Obs: {r.iloc[4]}</div></div>', unsafe_allow_html=True)
-    except Exception as e: st.write("Ausências: Sem dados para hoje")
+    except: pass
 
     # 4. ORAÇÃO (Não depende de data de hoje)
     try:
