@@ -139,12 +139,21 @@ def mostrar_apresentacao():
             df, col_data = converter_coluna_data(df)
             df = df[df[col_data].dt.date == hoje]
             if "Aprovação" in df.columns: 
-                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
-        if not df.empty:
-            st.markdown("### 📌 Recados e Avisos")
-            for _, r in df.iterrows():
-                st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-style: italic;">"{r.iloc[2]}"</div><div class="texto-normal" style="font-size: 16px;">Solicitante: {r.iloc[1]}</div></div>', unsafe_allow_html=True)
+                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]         
+            if not df.empty:
+                st.markdown("""<div style='text-align: center; background-color: #0e2433; color: #ffc107; padding: 10px; border-radius: 10px; margin-bottom: 20px; font-size: 20px; font-weight: bold;'>👋 "Cumprimento a igreja com a paz do Senhor!"</div>""", unsafe_allow_html=True)
+                st.markdown("### 📌 Recados e Avisos")
+                for _, row in df.iterrows():
+                    val_subtitulo = row.iloc[1] # Coluna B
+                    val_titulo = row.iloc[2]    # Coluna C
+                    st.markdown(f"""
+                    <div class="agenda-card">
+                        <div class="texto-destaque" style="font-style: italic;">"{val_titulo}"</div>
+                        <div class="texto-normal" style="margin-top:5px; font-size: 16px; color: #666;">Pede o recado: {val_subtitulo}</div>
+                    </div>""", unsafe_allow_html=True)
+                st.markdown("---")
     except: pass
+
 
     # 2. VISITANTES (C destaque, D/E ênfase H2)
     try:
