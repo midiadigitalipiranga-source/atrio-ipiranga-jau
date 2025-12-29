@@ -9,7 +9,7 @@ import time
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Átrio - Recepção", layout="wide")
 
-# --- CSS PERSONALIZADO (Design do Telão e Sidebar) ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
 <style>
     [data-testid="stSidebar"] { background-color: #0e2433; }
@@ -86,7 +86,7 @@ def filtrar_proxima_semana(df):
     df_s = df[(df[col].dt.date >= prox_segunda) & (df[col].dt.date <= prox_segunda + timedelta(days=6))].sort_values(by=col)
     return df_s, col
 
-# --- FUNÇÃO DE GESTÃO (UNIFICADA E ROBUSTA) ---
+# --- FUNÇÃO DE GESTÃO ---
 def mostrar_tabela_gestao(aba_nome, titulo, link_forms=None, filtrar_hoje=False):
     st.header(titulo)
     if link_forms:
@@ -123,85 +123,102 @@ def mostrar_tabela_gestao(aba_nome, titulo, link_forms=None, filtrar_hoje=False)
             st.success("Salvo!"); time.sleep(1); st.rerun()
     except Exception as e: st.error(f"Erro: {e}")
 
-# --- APRESENTAÇÃO (DESIGN DO TELÃO) ---
+# --- APRESENTAÇÃO CORRIGIDA ---
 def mostrar_apresentacao():
     st.markdown("## 📢 Resumo do Dia")
     if st.button("🔄 Atualizar Lista"): st.cache_resource.clear(); st.rerun()
     st.markdown("---")
-    sh = conectar(); hoje = datetime.now().date()
+    
+    sh = conectar()
+    hoje = datetime.now().date()
 
-    # 1. RECADOS (C destaque, B subtítulo)
+    # 1. RECADOS
     try:
         df = pd.DataFrame(sh.worksheet("cadastro_recados").get_all_records())
-        df, c = converter_coluna_data(df)
-        df = df[(df[c].dt.date == hoje) & (~df["Aprovação"].str.contains("Reprovado", na=False))]
         if not df.empty:
-            st.markdown("### 📌 Recados e Avisos")
-            for _, r in df.iterrows():
-                st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-style: italic;">"{r.iloc[2]}"</div><div class="texto-normal" style="font-size: 16px;">Solicitante: {r.iloc[1]}</div></div>', unsafe_allow_html=True)
-    except: pass
+            df, c_dt = converter_coluna_data(df)
+            # Filtro: Data de hoje E Aprovação
+            df = df[(df[c_dt].dt.date == hoje)]
+            df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", na=False)]
+            
+            if not df.empty:
+                st.markdown("### 📌 Recados e Avisos")
+                for _, r in df.iterrows():
+                    st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-style: italic;">"{r.iloc[2]}"</div><div class="texto-normal" style="font-size: 16px;">Solicitante: {r.iloc[1]}</div></div>', unsafe_allow_html=True)
+    except Exception as e: st.write("Recados: Sem dados para hoje")
 
-    # 2. VISITANTES (C destaque, D/E ênfase H2)
+    # 2. VISITANTES
     try:
         df = pd.DataFrame(sh.worksheet("cadastro_visitante").get_all_records())
-        df, c = converter_coluna_data(df)
-        df = df[(df[c].dt.date == hoje) & (~df["Aprovação"].str.contains("Reprovado", na=False))]
         if not df.empty:
-            st.markdown("### 🫂 Visitantes")
-            for _, r in df.iterrows():
-                st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 32px;">{r.iloc[2]}</div><div class="texto-normal" style="color: #ffc107; background-color: #0e2433; display: inline-block; padding: 2px 10px; border-radius: 5px;">{r.iloc[3]} | {r.iloc[4]}</div></div>', unsafe_allow_html=True)
-    except: pass
+            df, c_dt = converter_coluna_data(df)
+            df = df[(df[c_dt].dt.date == hoje)]
+            df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", na=False)]
+            
+            if not df.empty:
+                st.markdown("### 🫂 Visitantes")
+                for _, r in df.iterrows():
+                    st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 32px;">{r.iloc[2]}</div><div class="texto-normal" style="color: #ffc107; background-color: #0e2433; display: inline-block; padding: 2px 10px; border-radius: 5px;">{r.iloc[3]} | {r.iloc[4]}</div></div>', unsafe_allow_html=True)
+    except Exception as e: st.write("Visitantes: Sem dados para hoje")
 
-    # 3. AUSÊNCIA (Nome/Cargo destaque H1, Motivo H2)
+    # 3. AUSÊNCIA
     try:
         df = pd.DataFrame(sh.worksheet("cadastro_ausencia").get_all_records())
-        df, c = converter_coluna_data(df)
-        df = df[(df[c].dt.date == hoje) & (~df["Aprovação"].str.contains("Reprovado", na=False))]
         if not df.empty:
-            st.markdown("### 📉 Ausências Justificadas")
-            for _, r in df.iterrows():
-                st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 30px;">{r.get("Nome", "")} - {r.get("Cargo", "")}</div><div class="texto-normal" style="font-size: 22px;"><b>Motivo:</b> {r.get("Motivo", "")}</div><div class="texto-normal" style="font-size: 16px; font-style: italic;">Obs: {r.get("Observação", "")}</div></div>', unsafe_allow_html=True)
-    except: pass
+            df, c_dt = converter_coluna_data(df)
+            df = df[(df[c_dt].dt.date == hoje)]
+            df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", na=False)]
+            
+            if not df.empty:
+                st.markdown("### 📉 Ausências Justificadas")
+                for _, r in df.iterrows():
+                    st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 30px;">{r.iloc[1]} - {r.iloc[2]}</div><div class="texto-normal" style="font-size: 22px;"><b>Motivo:</b> {r.iloc[3]}</div><div class="texto-normal" style="font-size: 16px; font-style: italic;">Obs: {r.iloc[4]}</div></div>', unsafe_allow_html=True)
+    except Exception as e: st.write("Ausências: Sem dados para hoje")
 
-    # 4. ORAÇÃO (B destaque H1, C/D destaque H2, Agrupado por C)
+    # 4. ORAÇÃO (Não depende de data de hoje)
     try:
         df = pd.DataFrame(sh.worksheet("cadastro_oracao").get_all_records())
-        df = df[~df["Aprovação"].str.contains("Reprovado", na=False)]
         if not df.empty:
-            st.markdown("### 🙏 Pedidos de Oração")
-            for mot in df.iloc[:, 2].unique():
-                st.markdown(f"<h4 style='color: #0e2433; border-bottom: 2px solid #ffc107;'>🎯 Motivo: {mot}</h4>", unsafe_allow_html=True)
-                for _, r in df[df.iloc[:, 2] == mot].iterrows():
-                    st.markdown(f'<div class="agenda-card" style="border-left: 8px solid #ffc107;"><div class="texto-destaque">{r.iloc[1]}</div><div class="texto-normal">Finalidade: {mot}</div><div style="font-size: 14px; color: #666;">Obs: {r.iloc[3]}</div></div>', unsafe_allow_html=True)
+            df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", na=False)]
+            if not df.empty:
+                st.markdown("### 🙏 Pedidos de Oração")
+                for mot in df.iloc[:, 2].unique():
+                    st.markdown(f"<h4 style='color: #0e2433; border-bottom: 2px solid #ffc107;'>🎯 Motivo: {mot}</h4>", unsafe_allow_html=True)
+                    df_mot = df[df.iloc[:, 2] == mot]
+                    for _, r in df_mot.iterrows():
+                        st.markdown(f'<div class="agenda-card" style="border-left: 8px solid #ffc107;"><div class="texto-destaque">{r.iloc[1]}</div><div class="texto-normal">Finalidade: {mot}</div><div style="font-size: 14px; color: #666;">Obs: {r.iloc[3]}</div></div>', unsafe_allow_html=True)
     except: pass
 
-    # 5. PARABENIZAÇÃO (B destaque H1, C/D destaque H2, Agrupado por C, Ordenado por A)
+    # 5. PARABENIZAÇÃO
     try:
         df = pd.DataFrame(sh.worksheet("cadastro_parabenizacao").get_all_records())
-        df = df[~df["Aprovação"].str.contains("Reprovado", na=False)].sort_values(by=df.columns[0])
         if not df.empty:
-            st.markdown("### 🎂 Felicitações")
-            for tip in df.iloc[:, 2].unique():
-                st.markdown(f"#### ✨ {tip}")
-                for _, r in df[df.iloc[:, 2] == tip].iterrows():
-                    st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 30px;">{r.iloc[1]}</div><div class="texto-normal">{tip} — {r.iloc[3]}</div></div>', unsafe_allow_html=True)
+            df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", na=False)]
+            df = df.sort_values(by=df.columns[0])
+            if not df.empty:
+                st.markdown("### 🎂 Felicitações")
+                for tip in df.iloc[:, 2].unique():
+                    st.markdown(f"#### ✨ {tip}")
+                    df_tip = df[df.iloc[:, 2] == tip]
+                    for _, r in df_tip.iterrows():
+                        st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 30px;">{r.iloc[1]}</div><div class="texto-normal">{tip} — {r.iloc[3]}</div></div>', unsafe_allow_html=True)
     except: pass
 
     # 6. PROGRAMAÇÃO
     try:
         df = pd.DataFrame(sh.worksheet("cadastro_agenda_semanal").get_all_records())
-        df_s, c = filtrar_proxima_semana(df)
+        df_s, c_dt = filtrar_proxima_semana(df)
         if not df_s.empty:
             st.markdown("### 🗓️ Programação da Semana")
             for i, d in enumerate(["Segunda-Feira", "Terça-Feira", "Quarta-Feira", "Quinta-Feira", "Sexta-Feira", "Sábado", "Domingo"]):
-                df_d = df_s[df_s[c].dt.weekday == i]
+                df_d = df_s[df_s[c_dt].dt.weekday == i]
                 if not df_d.empty:
-                    st.markdown(f"#### {d} ({df_d.iloc[0][c].strftime('%d/%m')})")
+                    st.markdown(f"#### {d} ({df_d.iloc[0][c_dt].strftime('%d/%m')})")
                     for _, r in df_d.iterrows():
                         st.markdown(f'<div class="agenda-card"><span class="agenda-col-c">{limpar_hora(r.iloc[1])}</span><span class="agenda-col-d">{r.iloc[2]}</span></div>', unsafe_allow_html=True)
     except: pass
 
-# --- MENU ---
+# --- MENU E ROTEAMENTO ---
 with st.sidebar:
     st.image("logo_atrio.png", use_container_width=True)
     sel = option_menu(None, ["Recados", "Visitantes", "Ausência", "Oração", "Parabenização", "Programação", "---", "Apresentação"], 
