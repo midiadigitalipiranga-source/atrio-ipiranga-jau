@@ -132,9 +132,14 @@ def mostrar_apresentacao():
 
     # 1. RECADOS (C destaque, B subtítulo)
     try:
-        df = pd.DataFrame(sh.worksheet("cadastro_recados").get_all_records())
-        df, c = converter_coluna_data(df)
-        df = df[(df[c].dt.date == hoje) & (~df["Aprovação"].str.contains("Reprovado", na=False))]
+        aba = sh.worksheet("cadastro_recados")
+        dados = aba.get_all_records()
+        if dados:
+            df = pd.DataFrame(dados)
+            df, col_data = converter_coluna_data(df)
+            df = df[df[col_data].dt.date == hoje]
+            if "Aprovação" in df.columns: 
+                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]
         if not df.empty:
             st.markdown("### 📌 Recados e Avisos")
             for _, r in df.iterrows():
