@@ -181,7 +181,7 @@ def mostrar_apresentacao():
                     st.markdown(f"<h4 style='color: #0e2433; border-bottom: 2px solid #ffc107;'>🎯 Motivo: {mot}</h4>", unsafe_allow_html=True)
                     df_mot = df[df.iloc[:, 2] == mot]
                     for _, r in df_mot.iterrows():
-                        st.markdown(f'<div class="agenda-card" style="border-left: 8px solid #ffc107;"><div class="texto-destaque">{r.iloc[1]}</div><div class="texto-normal">Finalidade: {mot}</div><div style="font-size: 14px; color: #666;">Obs: {r.iloc[3]}</div></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="agenda-card" style="border-left: 8px solid #ffc107;"><div class="texto-destaque">{r.iloc[1]}</div><div class="texto-normal">Motivo: {mot}</div><div style="font-size: 14px; color: #666;">Obs: {r.iloc[3]}</div></div>', unsafe_allow_html=True)
     except: pass
 
     # 5. PARABENIZAÇÃO
