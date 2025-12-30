@@ -622,6 +622,18 @@ def mostrar_apresentacao():
         regra_vis = "<b>👤 {1}</b><br>CONVITE DE: {2} | IGREJA/DENOMINAÇÃO: {3}"
         exibir_secao_apresentacao("4. VISITANTES DO DIA", pd.DataFrame(sh.worksheet("cadastro_visitante").get_all_records()), 0, "🫂", regra_texto=regra_vis)
 
+# --- LEMBRETE DE TRANSIÇÃO (ENTRE VISITANTES E ORAÇÃO) ---
+        st.markdown("""
+            <div style="background-color: #e9ecef; padding: 20px; border-radius: 10px; border-left: 8px solid #ffc107; margin-bottom: 40px; text-align: center;">
+                <p style="font-size: 20px; color: #0e2433; font-style: italic; margin: 0;">
+                    "Ainda com a igreja de pé vamos interceder pelos nossos pedidos de oração"
+                </p>
+                <p style="font-size: 20px; color: #0e2433; font-weight: bold; margin: 10px 0 0 0;">
+                    "Para isso chamaremos o: _____________________"
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        
         # --- 5. ORAÇÃO ---
         regra_ora = "<b>🙏 PARA: {1}</b><br>MOTIVO: {2} | OBS: {3}"
         exibir_secao_apresentacao("5. MOMENTO DE ORAÇÃO", pd.DataFrame(sh.worksheet("cadastro_oracao").get_all_records()), 0, "🙏", regra_texto=regra_ora)
