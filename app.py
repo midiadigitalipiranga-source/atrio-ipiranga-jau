@@ -69,19 +69,17 @@ with st.sidebar:
         }
     )
 
-# --- FUNÇÃO AUXILIAR: GESTÃO DE RECADOS (FILTRADA POR DATA) ---
+# --- GESTÃO DE RECADOS ---
 
 def gerenciar_recados():
     st.title("📌 Recados de Hoje")
     
-    # Botão de Novo Cadastro
     st.link_button("➕ Novo Cadastro (Forms)", "https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform", use_container_width=True)
     st.markdown("---")
 
     try:
         sh = conectar()
         aba = sh.worksheet("cadastro_recados")
-        # Pega todos os dados da planilha
         dados = aba.get_all_records()
         
         if not dados:
@@ -90,15 +88,12 @@ def gerenciar_recados():
 
         df_original = pd.DataFrame(dados)
 
-        # 1. TRATAMENTO DE DATA (Fuso Brasil)
+        # 1. TRATAMENTO DE DATA
         col_data = df_original.columns[0]
-        # Converte a coluna A para data pura, tratando erros
         df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
-        
         hoje = obter_hoje_brasil()
         
-        # 2. FILTRAGEM (Cria uma cópia apenas de hoje para trabalhar)
-        # Filtramos comparando apenas as datas (dt.date)
+        # 2. FILTRAGEM
         df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
 
         if df_hoje.empty:
@@ -106,64 +101,60 @@ def gerenciar_recados():
             return
 
         # 3. VERIFICAÇÃO DA COLUNA APROVAÇÃO
-        # Se não existir a coluna na planilha, o programa cria e marca como aprovado (1)
         if "Aprovação" not in df_hoje.columns:
             df_hoje["Aprovação"] = True
             df_original["Aprovação"] = 1
         else:
-            # Converte o que vem da planilha (1 ou 0) para True/False para o editor do Streamlit
             df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: True if str(x) in ['1', 'True', 'VERDADEIRO'] else False)
 
         # 4. EXIBIÇÃO VISUAL (TABLET)
-        col_b = df_hoje.columns[1] # Solicitante
-        col_c = df_hoje.columns[2] # Recado
+        col_b = df_hoje.columns[1] 
+        col_c = df_hoje.columns[2] 
 
         for i, row in df_hoje.iterrows():
             cor_fundo = "#00FF7F" if row["Aprovação"] else "#FFA07A"
-            status_ico = "✅" if row["Aprovação"] else "❌"
             st.markdown(f"""
                 <div style="background-color: {cor_fundo}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
-                    <div style="font-size: 13px; font-weight: bold; opacity: 0.7;">{status_ico} STATUS ATUAL</div>
                     <div style="font-size: 14px; font-weight: bold;">{row[col_b]}</div>
                     <div style="font-size: 16px;">{row[col_c]}</div>
                 </div>
             """, unsafe_allow_html=True)
 
-        st.markdown("### ⚙️ Painel de Aprovação")
+        st.markdown("### ⚙️ Painel de Edição e Aprovação")
+        st.info("💡 Toque duas vezes no texto abaixo para editar.")
         
-        # 5. EDITOR DE DADOS (Interação com o usuário)
-        # Ocultamos a data (Col A) para não poluir o tablet
+        # 5. EDITOR DE DADOS (AGORA COM EDIÇÃO LIBERADA)
         df_para_editar = df_hoje[["Aprovação", col_b, col_c]]
         
+        # REMOVIDO 'disabled=True' para permitir a edição
         df_editado = st.data_editor(
             df_para_editar,
             use_container_width=True,
             hide_index=True,
             column_config={
                 "Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small"),
-                col_b: st.column_config.TextColumn("Solicitante", disabled=True),
-                col_c: st.column_config.TextColumn("Recado", disabled=True),
+                col_b: st.column_config.TextColumn("Solicitante"), # Edição liberada
+                col_c: st.column_config.TextColumn("Recado"),      # Edição liberada
             },
             key="ed_recados_save"
         )
 
-        # 6. BOTÃO SALVAR (ENVIA PARA O GOOGLE SHEETS)
+        # 6. BOTÃO SALVAR
         if st.button("💾 SALVAR ALTERAÇÕES NA PLANILHA", use_container_width=True):
             with st.spinner("Sincronizando com Google Sheets..."):
-                # Atualizamos o dataframe original baseado no que foi editado na tela de "Hoje"
-                # Localizamos os índices originais para garantir que a linha certa seja alterada
+                # Atualiza Aprovação, Solicitante e Recado no DataFrame original
                 df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+                df_original.loc[df_hoje.index, col_b] = df_editado[col_b]
+                df_original.loc[df_hoje.index, col_c] = df_editado[col_c]
                 
-                # Prepara os dados para envio (converte tudo para string para evitar erros de JSON)
-                # Garante que a data original volte formatada corretamente para a planilha
+                # Formata data para salvar
                 df_para_salvar = df_original.copy()
                 df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
                 
-                # Limpa a aba e sobe os dados novos
                 aba.clear()
                 aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
                 
-                st.success("✅ Alterações gravadas com sucesso no Google Sheets!")
+                st.success("✅ Tudo atualizado!")
                 time.sleep(1)
                 st.rerun()
 
