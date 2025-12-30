@@ -583,9 +583,9 @@ def mostrar_apresentacao():
         # --- SETOR 2: PROGRAMAÇÃO (SÓ DOMINGO) ---
         #if hoje.weekday() == 6: # 6 é Domingo
             #df_prog = pd.DataFrame(sh.worksheet("cadastro_agenda_semanal").get_all_records())
-            #if not df_prog.empty:
-                #col_ev = df_prog.columns[1] # Coluna B
-                #df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
+            if not df_prog.empty:
+                col_ev = df_prog.columns[1] # Coluna B
+                df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
                 
                 # Próxima Semana
                 dias_seg = (0 - hoje.weekday() + 7) % 7
