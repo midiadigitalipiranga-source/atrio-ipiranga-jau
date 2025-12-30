@@ -108,7 +108,7 @@ def gerenciar_recados():
         # Cards de Visualização
         for i, row in df_hoje.iterrows():
             cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
-            st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);"><div style="font-size: 14px; font-weight: bold;">{row[col_b]}</div><div style="font-size: 16px;">{row[col_c]}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);"><div style="font-size: 18px; font-weight: bold;">{row[col_b]}</div><div style="font-size: 18px;">{row[col_c]}</div></div>', unsafe_allow_html=True)
 
         st.markdown("### ⚙️ Painel de Edição")
         df_editado = st.data_editor(
@@ -166,7 +166,7 @@ def gerenciar_visitantes():
 
         for i, row in df_hoje.iterrows():
             cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
-            st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433;"><div style="font-size: 16px; font-weight: bold;">👤 {row[col_nome]}</div><div style="font-size: 14px;">Igreja: {row[col_igreja]} | Convidado por: {row[col_convite]}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433;"><div style="font-size: 18px; font-weight: bold;">👤 {row[col_nome]}</div><div style="font-size: 18px;">Convidado de: {row[col_igreja]} | Convidado por: {row[col_convite]}</div></div>', unsafe_allow_html=True)
 
         df_editado = st.data_editor(
             df_hoje[["Aprovação", col_nome, col_igreja, col_convite]],
