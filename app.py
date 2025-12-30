@@ -191,11 +191,26 @@ def gerenciar_visitantes():
 if sel == "Recados":
     gerenciar_recados()
 
-elif sel == "Apresentação":
-    st.title("📢 Tela de Apresentação (Telão)")
-    st.info("Área em construção...")
+elif sel == "Visitantes":
+    gerenciar_visitantes()
 
-# (Outras opções seguem o mesmo padrão por enquanto)
-else:
-    st.title(f"ℹ️ {sel}")
-    st.info("Aguardando configuração de dados...")
+elif sel == "Ausência":
+    st.title("📉 Ausências")
+    st.info("Aguardando configuração de dados para esta aba...")
+
+elif sel == "Oração":
+    st.title("🙏 Pedidos de Oração")
+    st.info("Aguardando configuração de dados para esta aba...")
+
+elif sel == "Parabenização":
+    st.title("🎂 Parabenização")
+    st.info("Aguardando configuração de dados para esta aba...")
+
+elif sel == "Programação":
+    st.title("🗓️ Programação")
+    st.info("Aguardando configuração de dados para esta aba...")
+
+elif sel == "Apresentação":
+    # Aqui chamaremos a tela de leitura final para o tablet
+    st.title("📢 Tela de Apresentação")
+    st.info("Aguardando configuração de dados para esta aba...")
