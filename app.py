@@ -69,11 +69,11 @@ with st.sidebar:
         }
     )
 
-# --- GESTÃO DE RECADOS ---
+
+# --- MÓDULO DE RECADOS ---
 
 def gerenciar_recados():
     st.title("📌 Recados de Hoje")
-    
     st.link_button("➕ Novo Cadastro (Forms)", "https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform", use_container_width=True)
     st.markdown("---")
 
@@ -81,85 +81,111 @@ def gerenciar_recados():
         sh = conectar()
         aba = sh.worksheet("cadastro_recados")
         dados = aba.get_all_records()
+        if not dados: return
         
-        if not dados:
-            st.warning("A planilha parece estar vazia.")
-            return
-
         df_original = pd.DataFrame(dados)
-
-        # 1. TRATAMENTO DE DATA
         col_data = df_original.columns[0]
         df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
         hoje = obter_hoje_brasil()
-        
-        # 2. FILTRAGEM
         df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
 
         if df_hoje.empty:
-            st.info(f"📅 Nenhum recado para hoje ({hoje.strftime('%d/%m/%Y')}).")
+            st.info(f"📅 Sem recados para hoje.")
             return
 
-        # 3. VERIFICAÇÃO DA COLUNA APROVAÇÃO
+        # --- LÓGICA DE AUTO-APROVAÇÃO (CORREÇÃO) ---
         if "Aprovação" not in df_hoje.columns:
             df_hoje["Aprovação"] = True
-            df_original["Aprovação"] = 1
         else:
-            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: True if str(x) in ['1', 'True', 'VERDADEIRO'] else False)
+            # Se o valor for vazio, 1, True ou VERDADEIRO, vira True. Se for 0 ou False, vira False.
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(
+                lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True
+            )
 
-        # 4. EXIBIÇÃO VISUAL (TABLET)
         col_b = df_hoje.columns[1] 
         col_c = df_hoje.columns[2] 
 
+        # Cards de Visualização
         for i, row in df_hoje.iterrows():
-            cor_fundo = "#00FF7F" if row["Aprovação"] else "#FFA07A"
-            st.markdown(f"""
-                <div style="background-color: {cor_fundo}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; font-weight: bold;">{row[col_b]}</div>
-                    <div style="font-size: 16px;">{row[col_c]}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
+            st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);"><div style="font-size: 14px; font-weight: bold;">{row[col_b]}</div><div style="font-size: 16px;">{row[col_c]}</div></div>', unsafe_allow_html=True)
 
-        st.markdown("### ⚙️ Painel de Edição e Aprovação")
-        st.info("💡 Toque duas vezes no texto abaixo para editar.")
-        
-        # 5. EDITOR DE DADOS (AGORA COM EDIÇÃO LIBERADA)
-        df_para_editar = df_hoje[["Aprovação", col_b, col_c]]
-        
-        # REMOVIDO 'disabled=True' para permitir a edição
+        st.markdown("### ⚙️ Painel de Edição")
         df_editado = st.data_editor(
-            df_para_editar,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small"),
-                col_b: st.column_config.TextColumn("Solicitante"), # Edição liberada
-                col_c: st.column_config.TextColumn("Recado"),      # Edição liberada
-            },
-            key="ed_recados_save"
+            df_hoje[["Aprovação", col_b, col_c]],
+            use_container_width=True, hide_index=True,
+            column_config={"Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small")},
+            key="ed_recados"
         )
 
-        # 6. BOTÃO SALVAR
-        if st.button("💾 SALVAR ALTERAÇÕES NA PLANILHA", use_container_width=True):
-            with st.spinner("Sincronizando com Google Sheets..."):
-                # Atualiza Aprovação, Solicitante e Recado no DataFrame original
-                df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
-                df_original.loc[df_hoje.index, col_b] = df_editado[col_b]
-                df_original.loc[df_hoje.index, col_c] = df_editado[col_c]
-                
-                # Formata data para salvar
-                df_para_salvar = df_original.copy()
-                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
-                
-                aba.clear()
-                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
-                
-                st.success("✅ Tudo atualizado!")
-                time.sleep(1)
-                st.rerun()
+        if st.button("💾 SALVAR ALTERAÇÕES", use_container_width=True):
+            df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+            df_original.loc[df_hoje.index, col_b] = df_editado[col_b]
+            df_original.loc[df_hoje.index, col_c] = df_editado[col_c]
+            
+            df_para_salvar = df_original.copy()
+            df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+            aba.clear()
+            aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
+            st.success("✅ Sincronizado!")
+            time.sleep(1); st.rerun()
+    except Exception as e: st.error(f"Erro: {e}")
 
-    except Exception as e:
-        st.error(f"Erro ao processar dados: {e}")
+# --- MÓDULO DE VISITANTES ---
+
+def gerenciar_visitantes():
+    st.title("🫂 Visitantes de Hoje")
+    st.link_button("➕ Novo Visitante", "https://docs.google.com/forms/d/e/1FAIpQLScuFOyVP1p0apBrBc0yuOak2AnznpbVemts5JIDe0bawIQIqw/viewform", use_container_width=True)
+    st.markdown("---")
+
+    try:
+        sh = conectar()
+        aba = sh.worksheet("cadastro_visitante")
+        dados = aba.get_all_records()
+        if not dados: return
+        
+        df_original = pd.DataFrame(dados)
+        col_data = df_original.columns[0]
+        df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
+        hoje = obter_hoje_brasil()
+        df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
+
+        if df_hoje.empty:
+            st.info(f"📅 Nenhum visitante para hoje.")
+            return
+
+        # Lógica de Aprovação (Vazio = Ativo)
+        if "Aprovação" not in df_hoje.columns:
+            df_hoje["Aprovação"] = True
+        else:
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
+
+        col_nome = df_hoje.columns[1]   # Nome do Visitante
+        col_igreja = df_hoje.columns[2] # Igreja
+        col_convite = df_hoje.columns[3] # Quem convidou
+
+        for i, row in df_hoje.iterrows():
+            cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
+            st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433;"><div style="font-size: 16px; font-weight: bold;">👤 {row[col_nome]}</div><div style="font-size: 14px;">Igreja: {row[col_igreja]} | Convidado por: {row[col_convite]}</div></div>', unsafe_allow_html=True)
+
+        df_editado = st.data_editor(
+            df_hoje[["Aprovação", col_nome, col_igreja, col_convite]],
+            use_container_width=True, hide_index=True,
+            column_config={"Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small")},
+            key="ed_visitantes"
+        )
+
+        if st.button("💾 SALVAR VISITANTES", use_container_width=True):
+            df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+            df_original.loc[df_hoje.index, col_nome] = df_editado[col_nome]
+            
+            df_para_salvar = df_original.copy()
+            df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+            aba.clear()
+            aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
+            st.success("✅ Visitantes Atualizados!")
+            time.sleep(1); st.rerun()
+    except Exception as e: st.error(f"Erro: {e}")
 
 # --- ATUALIZAÇÃO DO ROTEAMENTO ---
 if sel == "Recados":
