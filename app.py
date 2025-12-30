@@ -166,7 +166,7 @@ def gerenciar_visitantes():
 
         for i, row in df_hoje.iterrows():
             cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
-            st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433;"><div style="font-size: 18px; font-weight: bold;">👤 {row[col_nome]}</div><div style="font-size: 18px;">Convidado de: {row[col_igreja]} | Convidado por: {row[col_convite]}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433;"><div style="font-size: 18px; font-weight: bold;">👤 {row[col_nome]}</div><div style="font-size: 18px;">CONVITE DE: {row[col_igreja]} | IGREJA/DENOMINAÇÃO: {row[col_convite]}</div></div>', unsafe_allow_html=True)
 
         df_editado = st.data_editor(
             df_hoje[["Aprovação", col_nome, col_igreja, col_convite]],
@@ -187,30 +187,493 @@ def gerenciar_visitantes():
             time.sleep(1); st.rerun()
     except Exception as e: st.error(f"Erro: {e}")
 
+# --- MÓDULO DE AUSÊNCIA ---
+
+def gerenciar_ausencia():
+    st.title("📉 Ausências de Hoje")
+    st.link_button("➕ Justificar Ausência", "https://docs.google.com/forms/d/e/1FAIpQLSdlEV-UIY4L2ElRRL-uZqOUXiEtTfapQ0lkHbK1Fy-H1rcJag/viewform", use_container_width=True)
+    st.markdown("---")
+
+    try:
+        sh = conectar()
+        aba = sh.worksheet("cadastro_ausencia")
+        dados = aba.get_all_records()
+        if not dados: return
+        
+        df_original = pd.DataFrame(dados)
+        col_data = df_original.columns[0]
+        df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
+        
+        hoje = obter_hoje_brasil()
+        df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
+
+        if df_hoje.empty:
+            st.info(f"📅 Nenhuma ausência registrada para hoje ({hoje.strftime('%d/%m/%Y')}).")
+            return
+
+        # Lógica de Aprovação (Vazio ou novo = Ativo/Verde)
+        if "Aprovação" not in df_hoje.columns:
+            df_hoje["Aprovação"] = True
+        else:
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
+
+        # Mapeamento de Colunas conforme solicitado
+        col_nome = df_hoje.columns[1]   # Col B
+        col_cargo = df_hoje.columns[2]  # Col C
+        col_motivo = df_hoje.columns[3] # Col D
+        col_obs = df_hoje.columns[4]    # Col E
+
+        # Exibição visual nos cards para leitura no Tablet
+        for i, row in df_hoje.iterrows():
+            cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
+            # Montagem do texto conforme sua regra: Nome (Cargo) / Motivo Obs
+            st.markdown(f"""
+                <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
+                    <div style="font-size: 18px; font-weight: bold;">👤 {row[col_nome]} ({row[col_cargo]})</div>
+                    <div style="font-size: 18px;">MOTIVO: {row[col_motivo]} | OBS: {row[col_obs]}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        # Painel de Edição
+        st.markdown("### ⚙️ Painel de Edição")
+        df_editado = st.data_editor(
+            df_hoje[["Aprovação", col_nome, col_cargo, col_motivo, col_obs]],
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small"),
+                col_nome: "Nome",
+                col_cargo: "Cargo",
+                col_motivo: "Motivo",
+                col_obs: "Observação"
+            },
+            key="ed_ausencia"
+        )
+
+        if st.button("💾 SALVAR AUSÊNCIAS", use_container_width=True):
+            with st.spinner("Sincronizando..."):
+                # Atualiza Aprovação e campos de texto no DF original
+                df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+                df_original.loc[df_hoje.index, col_nome] = df_editado[col_nome]
+                df_original.loc[df_hoje.index, col_cargo] = df_editado[col_cargo]
+                df_original.loc[df_hoje.index, col_motivo] = df_editado[col_motivo]
+                df_original.loc[df_hoje.index, col_obs] = df_editado[col_obs]
+                
+                # Prepara para salvar voltando a data para string
+                df_para_salvar = df_original.copy()
+                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+                
+                aba.clear()
+                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
+                st.success("✅ Ausências atualizadas!")
+                time.sleep(1); st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro ao carregar aba 'cadastro_ausencia': {e}")
+
+# --- MÓDULO DE ORAÇÃO ---
+
+def gerenciar_oracao():
+    st.title("🙏 Pedidos de Oração")
+    st.link_button("➕ Novo Pedido de Oração", "https://docs.google.com/forms/d/e/1FAIpQLSe8W9x1Q9AwlSXytO3NDFvi2SgMKpfC6ICTVhMVH92S48KyyQ/viewform", use_container_width=True)
+    st.markdown("---")
+
+    try:
+        sh = conectar()
+        aba = sh.worksheet("cadastro_oracao")
+        dados = aba.get_all_records()
+        if not dados: return
+        
+        df_original = pd.DataFrame(dados)
+        col_data = df_original.columns[0]
+        df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
+        
+        hoje = obter_hoje_brasil()
+        df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
+
+        if df_hoje.empty:
+            st.info(f"📅 Nenhum pedido de oração para hoje ({hoje.strftime('%d/%m/%Y')}).")
+            return
+
+        # Lógica de Aprovação (Vazio ou novo = Ativo/Verde)
+        if "Aprovação" not in df_hoje.columns:
+            df_hoje["Aprovação"] = True
+        else:
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
+
+        # Mapeamento de Colunas
+        col_quem = df_hoje.columns[1]   # Col B (Para quem)
+        col_motivo = df_hoje.columns[2] # Col C (Motivo)
+        col_obs = df_hoje.columns[3]    # Col D (Observação)
+
+        # Exibição visual nos cards
+        for i, row in df_hoje.iterrows():
+            cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
+            st.markdown(f"""
+                <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
+                    <div style="font-size: 18px; font-weight: bold;">🙏 PARA: {row[col_quem]}</div>
+                    <div style="font-size: 18px;">MOTIVO: {row[col_motivo]} | OBS: {row[col_obs]}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        # Painel de Edição
+        st.markdown("### ⚙️ Painel de Edição")
+        df_editado = st.data_editor(
+            df_hoje[["Aprovação", col_quem, col_motivo, col_obs]],
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small"),
+                col_quem: "Destinatário",
+                col_motivo: "Motivo",
+                col_obs: "Observação"
+            },
+            key="ed_oracao"
+        )
+
+        if st.button("💾 SALVAR PEDIDOS DE ORAÇÃO", use_container_width=True):
+            with st.spinner("Sincronizando..."):
+                df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+                df_original.loc[df_hoje.index, col_quem] = df_editado[col_quem]
+                df_original.loc[df_hoje.index, col_motivo] = df_editado[col_motivo]
+                df_original.loc[df_hoje.index, col_obs] = df_editado[col_obs]
+                
+                df_para_salvar = df_original.copy()
+                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+                
+                aba.clear()
+                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
+                st.success("✅ Pedidos de oração atualizados!")
+                time.sleep(1); st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro ao carregar aba 'cadastro_oracao': {e}")
+
+# --- MÓDULO DE PARABENIZAÇÃO ---
+
+def gerenciar_parabenizacao():
+    st.title("🎂 Felicitações de Hoje")
+    st.link_button("➕ Nova Felicitação", "https://docs.google.com/forms/d/e/1FAIpQLSdI4ConKeN9T1iKFHTgtO89f71vMXdjrbmdbb20zGK0nMUDtw/viewform", use_container_width=True)
+    st.markdown("---")
+
+    try:
+        sh = conectar()
+        aba = sh.worksheet("cadastro_parabenizacao")
+        dados = aba.get_all_records()
+        if not dados: return
+        
+        df_original = pd.DataFrame(dados)
+        col_data = df_original.columns[0]
+        df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
+        
+        hoje = obter_hoje_brasil()
+        df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
+
+        if df_hoje.empty:
+            st.info(f"📅 Nenhuma felicitação para hoje ({hoje.strftime('%d/%m/%Y')}).")
+            return
+
+        # Lógica de Aprovação (Vazio ou novo = Ativo/Verde)
+        if "Aprovação" not in df_hoje.columns:
+            df_hoje["Aprovação"] = True
+        else:
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
+
+        # Mapeamento de Colunas
+        col_nome = df_hoje.columns[1]    # Col B (Quem recebe)
+        col_tipo = df_hoje.columns[2]    # Col C (Tipo: Aniversário/Bodas)
+        col_obs = df_hoje.columns[3]     # Col D (Observação/Anos)
+
+        # Exibição visual nos cards
+        for i, row in df_hoje.iterrows():
+            cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
+            st.markdown(f"""
+                <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
+                    <div style="font-size: 18px; font-weight: bold;">✨ {row[col_nome]} ({row[col_tipo]})</div>
+                    <div style="font-size: 18px;">INFO: {row[col_obs]}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        # Painel de Edição
+        st.markdown("### ⚙️ Painel de Edição")
+        df_editado = st.data_editor(
+            df_hoje[["Aprovação", col_nome, col_tipo, col_obs]],
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small"),
+                col_nome: "Homenageado",
+                col_tipo: "Tipo",
+                col_obs: "Observação/Anos"
+            },
+            key="ed_parabens"
+        )
+
+        if st.button("💾 SALVAR FELICITAÇÕES", use_container_width=True):
+            with st.spinner("Sincronizando..."):
+                df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+                df_original.loc[df_hoje.index, col_nome] = df_editado[col_nome]
+                df_original.loc[df_hoje.index, col_tipo] = df_editado[col_tipo]
+                df_original.loc[df_hoje.index, col_obs] = df_editado[col_obs]
+                
+                df_para_salvar = df_original.copy()
+                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+                
+                aba.clear()
+                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
+                st.success("✅ Felicitações atualizadas!")
+                time.sleep(1); st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro ao carregar aba 'cadastro_parabenizacao': {e}")
+
+# --- MÓDULO DE PROGRAMAÇÃO ---
+
+def gerenciar_programacao():
+    st.title("🗓️ Programação da Próxima Semana")
+    st.link_button("➕ Novo Evento", "https://docs.google.com/forms/d/e/1FAIpQLSc0kUREvy7XDG20tuG55XnaThdZ-nDm5eYp8pdM7M3YKJCPoQ/viewform", use_container_width=True)
+    st.markdown("---")
+
+    try:
+        sh = conectar()
+        aba = sh.worksheet("cadastro_agenda_semanal")
+        dados = aba.get_all_records()
+        if not dados: return
+        
+        df_original = pd.DataFrame(dados)
+        
+        # 1. TRATAMENTO DA DATA DO EVENTO (Coluna B)
+        col_evento_data = df_original.columns[1] # Coluna B
+        df_original[col_evento_data] = pd.to_datetime(df_original[col_evento_data], dayfirst=True, errors='coerce')
+
+        # 2. CÁLCULO DO INTERVALO (Próxima Segunda a Domingo)
+        hoje = obter_hoje_brasil()
+        # Dias que faltam para a próxima segunda (0=Segunda, 6=Domingo)
+        dias_para_segunda = (0 - hoje.weekday() + 7) % 7
+        if dias_para_segunda == 0: dias_para_segunda = 7 # Se hoje é segunda, pula para a próxima
+        
+        inicio_semana = hoje + timedelta(days=dias_para_segunda)
+        fim_semana = inicio_semana + timedelta(days=6)
+
+        # 3. FILTRAGEM
+        df_semana = df_original[
+            (df_original[col_evento_data].dt.date >= inicio_semana) & 
+            (df_original[col_evento_data].dt.date <= fim_semana)
+        ].copy()
+        
+        # Ordenar por data e hora
+        df_semana = df_semana.sort_values(by=col_evento_data)
+
+        if df_semana.empty:
+            st.info(f"📅 Sem eventos programados para a semana de {inicio_semana.strftime('%d/%m')} a {fim_semana.strftime('%d/%m')}.")
+            return
+
+        # Lógica de Aprovação
+        if "Aprovação" not in df_semana.columns:
+            df_semana["Aprovação"] = True
+        else:
+            df_semana["Aprovação"] = df_semana["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
+
+        col_evento_nome = df_semana.columns[2] # Coluna C
+
+        # --- EXIBIÇÃO AGRUPADA POR DIA ---
+        st.write(f"📅 Exibindo: **{inicio_semana.strftime('%d/%m')}** até **{fim_semana.strftime('%d/%m')}**")
+        
+        dias_semana_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+
+        for data_dia, grupo in df_semana.groupby(df_semana[col_evento_data].dt.date):
+            nome_dia = dias_semana_pt[data_dia.weekday()]
+            st.subheader(f"{nome_dia} ({data_dia.strftime('%d/%m')})")
+            
+            for i, row in grupo.iterrows():
+                cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
+                hora_str = row[col_evento_data].strftime('%H:%M')
+                
+                st.markdown(f"""
+                    <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 8px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
+                        <div style="font-size: 18px; font-weight: bold;">⏰ {hora_str} - {row[col_evento_nome]}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        # Painel de Edição
+        st.markdown("---")
+        st.markdown("### ⚙️ Painel de Edição da Semana")
+        
+        # Criamos uma coluna formatada para o editor mostrar data/hora legível
+        df_semana["Horário"] = df_semana[col_evento_data].dt.strftime('%d/%m %H:%M')
+        
+        df_editado = st.data_editor(
+            df_semana[["Aprovação", "Horário", col_evento_nome]],
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small"),
+                "Horário": st.column_config.TextColumn("Data/Hora", disabled=True),
+                col_evento_nome: "Evento"
+            },
+            key="ed_agenda"
+        )
+
+        if st.button("💾 SALVAR PROGRAMAÇÃO", use_container_width=True):
+            with st.spinner("Sincronizando..."):
+                df_original.loc[df_semana.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+                df_original.loc[df_semana.index, col_evento_nome] = df_editado[col_evento_nome]
+                
+                df_para_salvar = df_original.copy()
+                # Converte a data de volta para o formato que o Sheets aceita
+                df_para_salvar[col_evento_data] = df_para_salvar[col_evento_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+                
+                aba.clear()
+                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
+                st.success("✅ Agenda atualizada!")
+                time.sleep(1); st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro na Programação: {e}")
+  
+# --- TELA DE APRESENTAÇÃO (RESUMO FINAL PARA LEITURA) ---
+
+def mostrar_apresentacao():
+    # --- INSIGHT FIXO NO TOPO ---
+    st.markdown("""
+        <div style="background-color: #0e2433; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px;">
+            <h1 style="color: #ffc107; margin: 0; font-size: 28px;">👋 "CUMPRIMENTO A TODOS COM A PAZ DO SENHOR!"</h1>
+            <p style="color: white; margin: 5px 0 0 0; font-size: 16px;">Inicie com alegria e receba a todos com amor.</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    try:
+        sh = conectar()
+        hoje = obter_hoje_brasil()
+        
+        # --- 1. AUSÊNCIAS (JUSTIFICATIVAS) ---
+        st.markdown("### 📉 1. AUSÊNCIAS JUSTIFICADAS")
+        aba_aus = sh.worksheet("cadastro_ausencia")
+        df_aus = pd.DataFrame(aba_aus.get_all_records())
+        if not df_aus.empty:
+            df_aus[df_aus.columns[0]] = pd.to_datetime(df_aus[df_aus.columns[0]], dayfirst=True, errors='coerce').dt.date
+            # Filtro: Hoje + Ativo
+            df_aus = df_aus[(df_aus[df_aus.columns[0]] == hoje) & (df_aus["Aprovação"].astype(str).isin(['1', 'True', 'VERDADEIRO']))]
+            for _, r in df_aus.iterrows():
+                st.markdown(f"""
+                    <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; margin-bottom: 8px; border-left: 10px solid #0e2433; border: 1px solid #ddd;">
+                        <div style="font-size: 18px; font-weight: bold; color: #0e2433;">👤 {r.iloc[1]} ({r.iloc[2]})</div>
+                        <div style="font-size: 18px; color: #555;">MOTIVO: {r.iloc[3]} | {r.iloc[4]}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+        else: st.write("Nenhuma ausência para hoje.")
+
+        st.markdown("---")
+
+        # --- 2. PROGRAMAÇÃO DA SEMANA ---
+        st.markdown("### 🗓️ 2. PROGRAMAÇÃO DA SEMANA")
+        aba_prog = sh.worksheet("cadastro_agenda_semanal")
+        df_prog = pd.DataFrame(aba_prog.get_all_records())
+        if not df_prog.empty:
+            col_ev = df_prog.columns[1]
+            df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
+            
+            # Cálculo da Próxima Semana
+            dias_seg = (0 - hoje.weekday() + 7) % 7
+            if dias_seg == 0: dias_seg = 7
+            ini, fim = hoje + timedelta(days=dias_seg), hoje + timedelta(days=dias_seg+6)
+            
+            df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim) & (df_prog["Aprovação"].astype(str).isin(['1', 'True', 'VERDADEIRO']))]
+            df_p = df_p.sort_values(by=col_ev)
+
+            dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+            for data_dia, grupo in df_p.groupby(df_p[col_ev].dt.date):
+                st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
+                for _, r in grupo.iterrows():
+                    st.markdown(f"""
+                        <div style="background-color: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 5px; border-left: 5px solid #0e2433;">
+                            <div style="font-size: 18px; color: #0e2433;"><b>⏰ {r[col_ev].strftime('%H:%M')}</b> - {r.iloc[2]}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+
+        # --- 3. RECADOS E AVISOS ---
+        st.markdown("### 📌 3. RECADOS E AVISOS PONTUAIS")
+        aba_rec = sh.worksheet("cadastro_recados")
+        df_rec = pd.DataFrame(aba_rec.get_all_records())
+        if not df_rec.empty:
+            df_rec[df_rec.columns[0]] = pd.to_datetime(df_rec[df_rec.columns[0]], dayfirst=True, errors='coerce').dt.date
+            df_rec = df_rec[(df_rec[df_rec.columns[0]] == hoje) & (df_rec["Aprovação"].astype(str).isin(['1', 'True', 'VERDADEIRO']))]
+            for _, r in df_rec.iterrows():
+                st.markdown(f"""
+                    <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; margin-bottom: 8px; border: 1px solid #ddd;">
+                        <div style="font-size: 18px; color: #0e2433;"><b>💬 {r.iloc[2]}</b></div>
+                        <div style="font-size: 14px; color: #666;">Solicitado por: {r.iloc[1]}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # --- 4. VISITANTES ---
+        # Lembrete antes dos visitantes
+        st.markdown("*Dica: Receba-os com um sorriso e peça uma salva de palmas ao final.*")
+        st.markdown("### 🫂 4. VISITANTES DO DIA")
+        aba_vis = sh.worksheet("cadastro_visitante")
+        df_vis = pd.DataFrame(aba_vis.get_all_records())
+        if not df_vis.empty:
+            df_vis[df_vis.columns[0]] = pd.to_datetime(df_vis[df_vis.columns[0]], dayfirst=True, errors='coerce').dt.date
+            df_vis = df_vis[(df_vis[df_vis.columns[0]] == hoje) & (df_vis["Aprovação"].astype(str).isin(['1', 'True', 'VERDADEIRO']))]
+            for _, r in df_vis.iterrows():
+                st.markdown(f"""
+                    <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; margin-bottom: 8px; border-left: 10px solid #ffc107; border: 1px solid #ddd;">
+                        <div style="font-size: 20px; font-weight: bold; color: #0e2433;">👤 {r.iloc[1]}</div>
+                        <div style="font-size: 18px; color: #555;">CONVITE: {r.iloc[2]} | IGREJA: {r.iloc[3]}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # --- 5. ORAÇÃO ---
+        st.markdown("### 🙏 5. MOMENTO DE ORAÇÃO")
+        aba_ora = sh.worksheet("cadastro_oracao")
+        df_ora = pd.DataFrame(aba_ora.get_all_records())
+        if not df_ora.empty:
+            df_ora[df_ora.columns[0]] = pd.to_datetime(df_ora[df_ora.columns[0]], dayfirst=True, errors='coerce').dt.date
+            df_ora = df_ora[(df_ora[df_ora.columns[0]] == hoje) & (df_ora["Aprovação"].astype(str).isin(['1', 'True', 'VERDADEIRO']))]
+            for _, r in df_ora.iterrows():
+                st.markdown(f"""
+                    <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 8px; border: 1px dashed #0e2433;">
+                        <div style="font-size: 18px; font-weight: bold; color: #0e2433;">🙏 INTERCESSÃO POR: {r.iloc[1]}</div>
+                        <div style="font-size: 18px; color: #555;">MOTIVO: {r.iloc[2]} | OBS: {r.iloc[3]}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        # --- LEMBRETE FINAL ---
+        st.markdown("""
+            <div style="margin-top: 30px; padding: 15px; border-top: 2px solid #ffc107; text-align: center; color: #666; font-style: italic;">
+                "Deus abençoe a sua leitura e a recepção de todos!"
+            </div>
+        """, unsafe_allow_html=True)
+
+    except Exception as e:
+        st.error(f"Erro ao carregar Apresentação: {e}")
+          
 # --- ATUALIZAÇÃO DO ROTEAMENTO ---
+
 if sel == "Recados":
     gerenciar_recados()
-
+    
 elif sel == "Visitantes":
     gerenciar_visitantes()
-
+    
 elif sel == "Ausência":
-    st.title("📉 Ausências")
-    st.info("Aguardando configuração de dados para esta aba...")
-
+    gerenciar_ausencia()
+    
 elif sel == "Oração":
-    st.title("🙏 Pedidos de Oração")
-    st.info("Aguardando configuração de dados para esta aba...")
-
+    gerenciar_oracao()
+    
 elif sel == "Parabenização":
-    st.title("🎂 Parabenização")
-    st.info("Aguardando configuração de dados para esta aba...")
+    gerenciar_parabenizacao()
 
-elif sel == "Programação":
-    st.title("🗓️ Programação")
-    st.info("Aguardando configuração de dados para esta aba...")
+if sel == "Programação":
+    gerenciar_programacao()
 
 elif sel == "Apresentação":
-    # Aqui chamaremos a tela de leitura final para o tablet
-    st.title("📢 Tela de Apresentação")
-    st.info("Aguardando configuração de dados para esta aba...")
+    # Agora chamamos a função que consolida todos os dados ativos
+    mostrar_apresentacao()
