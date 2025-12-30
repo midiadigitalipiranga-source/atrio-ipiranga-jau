@@ -5,6 +5,11 @@ import gspread
 import json
 from datetime import datetime, timedelta
 import time
+import pytz
+# --- FUNÇÃO AUXILIAR PARA OBTER DATA BRASIL ---
+def obter_hoje_brasil():
+    fuso = pytz.timezone('America/Sao_Paulo')
+    return datetime.now(fuso).date()
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Átrio - Recepção", layout="wide")
@@ -65,68 +70,70 @@ with st.sidebar:
     )
 
 # --- FUNÇÃO AUXILIAR: GESTÃO DE RECADOS (FILTRADA POR DATA) ---
+
 def gerenciar_recados():
     st.title("📌 Recados de Hoje")
     
-    # Botão de Novo Cadastro (Útil para o tablet)
-    st.link_button("➕ Cadastrar Novo Recado", "https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform", use_container_width=True)
+    # Botão de Novo Cadastro
+    st.link_button("➕ Novo Cadastro (Forms)", "https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform", use_container_width=True)
     st.markdown("---")
 
     try:
         sh = conectar()
         aba = sh.worksheet("cadastro_recados")
+        # Pega todos os dados da planilha
         dados = aba.get_all_records()
         
         if not dados:
-            st.warning("Nenhum registro encontrado na planilha.")
+            st.warning("A planilha parece estar vazia.")
             return
 
-        df = pd.DataFrame(dados)
+        df_original = pd.DataFrame(dados)
 
-        # --- LÓGICA DE FILTRO POR DATA ATUAL ---
-        # 1. Identifica a Coluna A (índice 0) e converte para data pura (ignorando horas)
-        col_data = df.columns[0]
-        df[col_data] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce').dt.date
+        # 1. TRATAMENTO DE DATA (Fuso Brasil)
+        col_data = df_original.columns[0]
+        # Converte a coluna A para data pura, tratando erros
+        df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
         
-        # 2. Obtém a data de hoje
-        hoje = datetime.now().date()
+        hoje = obter_hoje_brasil()
         
-        # 3. Filtra o DataFrame para mostrar apenas o que for IGUAL a hoje
-        df_filtrado = df[df[col_data] == hoje].copy()
+        # 2. FILTRAGEM (Cria uma cópia apenas de hoje para trabalhar)
+        # Filtramos comparando apenas as datas (dt.date)
+        df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
 
-        if df_filtrado.empty:
-            st.info(f"📅 Não há recados lançados para hoje ({hoje.strftime('%d/%m/%Y')}).")
+        if df_hoje.empty:
+            st.info(f"📅 Nenhum recado para hoje ({hoje.strftime('%d/%m/%Y')}).")
             return
 
-        # --- CONFIGURAÇÃO DE COLUNAS ---
-        col_b = df_filtrado.columns[1] # Quem pede
-        col_c = df_filtrado.columns[2] # Recado
-        
-        if "Aprovação" not in df_filtrado.columns:
-            df_filtrado["Aprovação"] = True
+        # 3. VERIFICAÇÃO DA COLUNA APROVAÇÃO
+        # Se não existir a coluna na planilha, o programa cria e marca como aprovado (1)
+        if "Aprovação" not in df_hoje.columns:
+            df_hoje["Aprovação"] = True
+            df_original["Aprovação"] = 1
         else:
-            df_filtrado["Aprovação"] = df_filtrado["Aprovação"].apply(lambda x: True if str(x) in ['1', 'True', 'VERDADEIRO'] else False)
+            # Converte o que vem da planilha (1 ou 0) para True/False para o editor do Streamlit
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: True if str(x) in ['1', 'True', 'VERDADEIRO'] else False)
 
-        # --- EXIBIÇÃO EM CARDS COLORIDOS (OTIMIZADO PARA TABLET) ---
-        st.write(f"Filtrado para: **{hoje.strftime('%d/%m/%Y')}**")
-        
-        for i, row in df_filtrado.iterrows():
+        # 4. EXIBIÇÃO VISUAL (TABLET)
+        col_b = df_hoje.columns[1] # Solicitante
+        col_c = df_hoje.columns[2] # Recado
+
+        for i, row in df_hoje.iterrows():
             cor_fundo = "#00FF7F" if row["Aprovação"] else "#FFA07A"
-            status_simbolo = "✅" if row["Aprovação"] else "❌"
-            
+            status_ico = "✅" if row["Aprovação"] else "❌"
             st.markdown(f"""
-                <div style="background-color: {cor_fundo}; padding: 20px; border-radius: 15px; margin-bottom: 12px; border: 2px solid rgba(0,0,0,0.1); color: #0e2433;">
-                    <div style="font-size: 18px; font-weight: bold; margin-bottom: 5px;">{status_simbolo} {row[col_b]}</div>
-                    <div style="font-size: 20px; line-height: 1.4;">{row[col_c]}</div>
+                <div style="background-color: {cor_fundo}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
+                    <div style="font-size: 13px; font-weight: bold; opacity: 0.7;">{status_ico} STATUS ATUAL</div>
+                    <div style="font-size: 14px; font-weight: bold;">{row[col_b]}</div>
+                    <div style="font-size: 16px;">{row[col_c]}</div>
                 </div>
             """, unsafe_allow_html=True)
 
-        st.markdown("---")
+        st.markdown("### ⚙️ Painel de Aprovação")
         
-        # --- PAINEL DE EDIÇÃO ---
-        st.subheader("Controle de Status")
-        # Mostramos apenas Aprovação, Quem pede e Recado no editor
-        df_para_editar = df_filtrado[["Aprovação", col_b, col_c]]
+        # 5. EDITOR DE DADOS (Interação com o usuário)
+        # Ocultamos a data (Col A) para não poluir o tablet
+        df_para_editar = df_hoje[["Aprovação", col_b, col_c]]
         
         df_editado = st.data_editor(
             df_para_editar,
@@ -134,25 +141,34 @@ def gerenciar_recados():
             hide_index=True,
             column_config={
                 "Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small"),
-                col_b: "Solicitante",
-                col_c: "Conteúdo do Recado"
+                col_b: st.column_config.TextColumn("Solicitante", disabled=True),
+                col_c: st.column_config.TextColumn("Recado", disabled=True),
             },
-            key="ed_recados_hoje"
+            key="ed_recados_save"
         )
 
-        if st.button("💾 ATUALIZAR STATUS", use_container_width=True):
-            with st.spinner("Gravando..."):
-                # Atualiza o DF original com as mudanças do filtrado
-                df.loc[df_filtrado.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+        # 6. BOTÃO SALVAR (ENVIA PARA O GOOGLE SHEETS)
+        if st.button("💾 SALVAR ALTERAÇÕES NA PLANILHA", use_container_width=True):
+            with st.spinner("Sincronizando com Google Sheets..."):
+                # Atualizamos o dataframe original baseado no que foi editado na tela de "Hoje"
+                # Localizamos os índices originais para garantir que a linha certa seja alterada
+                df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
                 
+                # Prepara os dados para envio (converte tudo para string para evitar erros de JSON)
+                # Garante que a data original volte formatada corretamente para a planilha
+                df_para_salvar = df_original.copy()
+                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+                
+                # Limpa a aba e sobe os dados novos
                 aba.clear()
-                aba.update([df.columns.values.tolist()] + df.values.tolist())
-                st.success("Atualizado!")
+                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
+                
+                st.success("✅ Alterações gravadas com sucesso no Google Sheets!")
                 time.sleep(1)
                 st.rerun()
 
     except Exception as e:
-        st.error(f"Erro no processamento: {e}")
+        st.error(f"Erro ao processar dados: {e}")
 
 # --- ATUALIZAÇÃO DO ROTEAMENTO ---
 if sel == "Recados":
