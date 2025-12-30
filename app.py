@@ -581,7 +581,7 @@ def mostrar_apresentacao():
             st.markdown("<br><br>", unsafe_allow_html=True)
 
         # --- SETOR 2: PROGRAMAÇÃO (SÓ DOMINGO) ---
-        if hoje.weekday() == 6: # 6 é Domingo
+        #if hoje.weekday() == 6: # 6 é Domingo
             df_prog = pd.DataFrame(sh.worksheet("cadastro_agenda_semanal").get_all_records())
             if not df_prog.empty:
                 col_ev = df_prog.columns[1] # Coluna B
