@@ -534,9 +534,10 @@ def gerenciar_programacao():
 # --- TELA DE APRESENTAÇÃO (RESUMO FINAL PARA LEITURA) ---
 
 def mostrar_apresentacao():
+    # Estilo de lembrete fixo com margem inferior ampliada
     st.markdown("""
-        <div style="background-color: #0e2433; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px;">
-            <h1 style="color: #ffc107; margin: 0; font-size: 28px;">👋 "CUMPRIMENTO A TODOS COM A PAZ DO SENHOR!"</h1>
+        <div style="background-color: #0e2433; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 50px;">
+            <h1 style="color: #ffc107; margin: 0; font-size: 30px;">👋 "CUMPRIMENTO A TODOS COM A PAZ DO SENHOR!"</h1>
         </div>
     """, unsafe_allow_html=True)
 
@@ -544,62 +545,93 @@ def mostrar_apresentacao():
         sh = conectar()
         hoje = obter_hoje_brasil()
         
-        # Função interna para filtrar com segurança
-        def filtrar_seguro(df, data_col_idx, verificar_hoje=True):
-            if df.empty: return df
-            # Tratamento de data
-            df[df.columns[data_col_idx]] = pd.to_datetime(df[df.columns[data_col_idx]], dayfirst=True, errors='coerce').dt.date
-            # Filtro de Aprovação: Se a coluna não existir, considera aprovado
-            if "Aprovação" in df.columns:
-                df = df[~df["Aprovação"].astype(str).isin(['0', 'False', 'FALSO'])]
-            # Filtro de Data
-            if verificar_hoje:
-                df = df[df[df.columns[data_col_idx]] == hoje]
-            return df
+        # Função interna para filtrar e padronizar o visual neutro com fonte 18px
+        def exibir_secao_apresentacao(titulo, df, data_col_idx, icone, verificar_hoje=True, regra_texto=""):
+            st.markdown(f"### {icone} {titulo}")
+            
+            if df.empty:
+                st.write("Sem registros ativos para hoje.")
+            else:
+                # Tratamento de data para filtro
+                df[df.columns[data_col_idx]] = pd.to_datetime(df[df.columns[data_col_idx]], dayfirst=True, errors='coerce').dt.date
+                
+                # Filtro de Aprovação (Vazio ou diferente de 0/False é Ativo)
+                if "Aprovação" in df.columns:
+                    df = df[~df["Aprovação"].astype(str).isin(['0', 'False', 'FALSO'])]
+                
+                # Filtro de Data
+                if verificar_hoje:
+                    df = df[df[df.columns[data_col_idx]] == hoje]
+
+                if df.empty:
+                    st.write("Sem registros ativos para hoje.")
+                else:
+                    for _, r in df.iterrows():
+                        # Montagem flexível baseada na regra de cada tela
+                        conteudo = regra_texto.format(*r)
+                        st.markdown(f"""
+                            <div style="background-color: #ffffff; padding: 20px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-left: 8px solid #0e2433;">
+                                <div style="font-size: 18px; color: #0e2433; line-height: 1.5;">{conteudo}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+            
+            # Espaçamento generoso entre os módulos (Assuntos)
+            st.markdown("<br><br>", unsafe_allow_html=True)
 
         # --- 1. AUSÊNCIAS ---
-        st.markdown("### 📉 1. AUSÊNCIAS JUSTIFICADAS")
-        df_aus = filtrar_seguro(pd.DataFrame(sh.worksheet("cadastro_ausencia").get_all_records()), 0)
-        for _, r in df_aus.iterrows():
-            st.markdown(f'<div class="agenda-card"><b>👤 {r.iloc[1]} ({r.iloc[2]})</b><br>MOTIVO: {r.iloc[3]} | {r.iloc[4]}</div>', unsafe_allow_html=True)
+        # Regra: B (C) na primeira linha, D e E na segunda
+        # iloc: [1]=Nome, [2]=Cargo, [3]=Motivo, [4]=Obs
+        regra_aus = "<b>👤 {1} ({2})</b><br>MOTIVO: {3} | OBS: {4}"
+        exibir_secao_apresentacao("1. AUSÊNCIAS JUSTIFICADAS", pd.DataFrame(sh.worksheet("cadastro_ausencia").get_all_records()), 0, "📉", regra_texto=regra_aus)
 
-        # --- 2. PROGRAMAÇÃO ---
+        # --- 2. PROGRAMAÇÃO DA SEMANA ---
         st.markdown("### 🗓️ 2. PROGRAMAÇÃO DA SEMANA")
         aba_prog = sh.worksheet("cadastro_agenda_semanal")
         df_prog = pd.DataFrame(aba_prog.get_all_records())
         if not df_prog.empty:
-            col_ev = df_prog.columns[1]
+            col_ev = df_prog.columns[1] # Col B (Data/Hora)
             df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
+            
             dias_seg = (0 - hoje.weekday() + 7) % 7
             if dias_seg == 0: dias_seg = 7
             ini, fim = hoje + timedelta(days=dias_seg), hoje + timedelta(days=dias_seg+6)
+            
             df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)]
             if "Aprovação" in df_p.columns:
                 df_p = df_p[~df_p["Aprovação"].astype(str).isin(['0', 'False', 'FALSO'])]
             
-            dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
-            for data_dia, grupo in df_p.sort_values(by=col_ev).groupby(df_p[col_ev].dt.date):
-                st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
-                for _, r in grupo.iterrows():
-                    st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; margin-bottom: 5px; border-left: 5px solid #0e2433;"><b>⏰ {r[col_ev].strftime("%H:%M")}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
+            if df_p.empty:
+                st.write("Sem programação para a próxima semana.")
+            else:
+                dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+                for data_dia, grupo in df_p.sort_values(by=col_ev).groupby(df_p[col_ev].dt.date):
+                    st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
+                    for _, r in grupo.iterrows():
+                        st.markdown(f"""
+                            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #eee; border-left: 5px solid #0e2433;">
+                                <div style="font-size: 18px; color: #0e2433;"><b>⏰ {r[col_ev].strftime('%H:%M')}</b> - {r.iloc[2]}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+        st.markdown("<br><br>", unsafe_allow_html=True)
 
         # --- 3. RECADOS ---
-        st.markdown("### 📌 3. RECADOS E AVISOS")
-        df_rec = filtrar_seguro(pd.DataFrame(sh.worksheet("cadastro_recados").get_all_records()), 0)
-        for _, r in df_rec.iterrows():
-            st.markdown(f'<div class="agenda-card"><b>💬 {r.iloc[2]}</b><br><small>Solicitado por: {r.iloc[1]}</small></div>', unsafe_allow_html=True)
+        regra_rec = "<b>💬 {2}</b><br><small>SOLICITANTE: {1}</small>"
+        exibir_secao_apresentacao("3. RECADOS E AVISOS", pd.DataFrame(sh.worksheet("cadastro_recados").get_all_records()), 0, "📌", regra_texto=regra_rec)
 
         # --- 4. VISITANTES ---
-        st.markdown("### 🫂 4. VISITANTES DO DIA")
-        df_vis = filtrar_seguro(pd.DataFrame(sh.worksheet("cadastro_visitante").get_all_records()), 0)
-        for _, r in df_vis.iterrows():
-            st.markdown(f'<div class="agenda-card" style="border-left: 10px solid #ffc107;"><b>👤 {r.iloc[1]}</b><br>CONVITE: {r.iloc[2]} | IGREJA: {r.iloc[3]}</div>', unsafe_allow_html=True)
+        regra_vis = "<b>👤 {1}</b><br>CONVITE DE: {2} | IGREJA/DENOMINAÇÃO: {3}"
+        exibir_secao_apresentacao("4. VISITANTES DO DIA", pd.DataFrame(sh.worksheet("cadastro_visitante").get_all_records()), 0, "🫂", regra_texto=regra_vis)
 
         # --- 5. ORAÇÃO ---
-        st.markdown("### 🙏 5. MOMENTO DE ORAÇÃO")
-        df_ora = filtrar_seguro(pd.DataFrame(sh.worksheet("cadastro_oracao").get_all_records()), 0)
-        for _, r in df_ora.iterrows():
-            st.markdown(f'<div class="agenda-card" style="border: 1px dashed #0e2433;"><b>🙏 PARA: {r.iloc[1]}</b><br>MOTIVO: {r.iloc[2]}</div>', unsafe_allow_html=True)
+        regra_ora = "<b>🙏 PARA: {1}</b><br>MOTIVO: {2} | OBS: {3}"
+        exibir_secao_apresentacao("5. MOMENTO DE ORAÇÃO", pd.DataFrame(sh.worksheet("cadastro_oracao").get_all_records()), 0, "🙏", regra_texto=regra_ora)
+
+        # Frase final de incentivo
+        st.markdown("""
+            <div style="text-align: center; color: #666; font-style: italic; margin-top: 40px; padding-bottom: 50px;">
+                "Deus abençoe a sua leitura e a recepção de todos!"
+            </div>
+        """, unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"Erro ao carregar Apresentação: {e}")
