@@ -64,12 +64,12 @@ with st.sidebar:
         }
     )
 
-# --- FUNÇÃO AUXILIAR: GESTÃO DE RECADOS ---
+# --- FUNÇÃO AUXILIAR: GESTÃO DE RECADOS (FILTRADA POR DATA) ---
 def gerenciar_recados():
-    st.title("📌 Gestão de Recados")
+    st.title("📌 Recados de Hoje")
     
-    # Botão de Novo Cadastro (Sempre visível)
-    st.link_button("➕ Cadastrar Novo Recado (Forms)", "https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform", use_container_width=True)
+    # Botão de Novo Cadastro (Útil para o tablet)
+    st.link_button("➕ Cadastrar Novo Recado", "https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform", use_container_width=True)
     st.markdown("---")
 
     try:
@@ -78,78 +78,81 @@ def gerenciar_recados():
         dados = aba.get_all_records()
         
         if not dados:
-            st.warning("Nenhum recado encontrado.")
+            st.warning("Nenhum registro encontrado na planilha.")
             return
 
         df = pd.DataFrame(dados)
 
-        # 1. Selecionar apenas Colunas B e C (índices 1 e 2)
-        # Assumindo: Col B = Quem pede, Col C = Recado
-        col_b = df.columns[1]
-        col_c = df.columns[2]
+        # --- LÓGICA DE FILTRO POR DATA ATUAL ---
+        # 1. Identifica a Coluna A (índice 0) e converte para data pura (ignorando horas)
+        col_data = df.columns[0]
+        df[col_data] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce').dt.date
         
-        # 2. Criar/Verificar coluna de Aprovação (Flag)
-        if "Aprovação" not in df.columns:
-            df["Aprovação"] = True  # Inicia aprovado (1)
+        # 2. Obtém a data de hoje
+        hoje = datetime.now().date()
+        
+        # 3. Filtra o DataFrame para mostrar apenas o que for IGUAL a hoje
+        df_filtrado = df[df[col_data] == hoje].copy()
+
+        if df_filtrado.empty:
+            st.info(f"📅 Não há recados lançados para hoje ({hoje.strftime('%d/%m/%Y')}).")
+            return
+
+        # --- CONFIGURAÇÃO DE COLUNAS ---
+        col_b = df_filtrado.columns[1] # Quem pede
+        col_c = df_filtrado.columns[2] # Recado
+        
+        if "Aprovação" not in df_filtrado.columns:
+            df_filtrado["Aprovação"] = True
         else:
-            # Converte valores da planilha para Booleano (True/False)
-            df["Aprovação"] = df["Aprovação"].apply(lambda x: True if str(x) in ['1', 'True', 'VERDADEIRO'] else False)
+            df_filtrado["Aprovação"] = df_filtrado["Aprovação"].apply(lambda x: True if str(x) in ['1', 'True', 'VERDADEIRO'] else False)
 
-        # 3. Preparar DataFrame para exibição (Aprovação na frente)
-        df_display = df[["Aprovação", col_b, col_c]]
-
-        # --- VISUALIZAÇÃO COLORIDA (PARA CELULAR) ---
-        st.markdown("### Visualização de Status")
-        for i, row in df_display.iterrows():
+        # --- EXIBIÇÃO EM CARDS COLORIDOS (OTIMIZADO PARA TABLET) ---
+        st.write(f"Filtrado para: **{hoje.strftime('%d/%m/%Y')}**")
+        
+        for i, row in df_filtrado.iterrows():
             cor_fundo = "#00FF7F" if row["Aprovação"] else "#FFA07A"
-            status_texto = "✅ APROVADO" if row["Aprovação"] else "❌ REPROVADO"
+            status_simbolo = "✅" if row["Aprovação"] else "❌"
             
             st.markdown(f"""
-                <div style="background-color: {cor_fundo}; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #ccc; color: #333;">
-                    <div style="font-size: 10px; font-weight: bold;">{status_texto}</div>
-                    <div style="font-size: 14px; font-weight: bold;">{row[col_b]}</div>
-                    <div style="font-size: 16px;">{row[col_c]}</div>
+                <div style="background-color: {cor_fundo}; padding: 20px; border-radius: 15px; margin-bottom: 12px; border: 2px solid rgba(0,0,0,0.1); color: #0e2433;">
+                    <div style="font-size: 18px; font-weight: bold; margin-bottom: 5px;">{status_simbolo} {row[col_b]}</div>
+                    <div style="font-size: 20px; line-height: 1.4;">{row[col_c]}</div>
                 </div>
             """, unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("### Painel de Controle (Edição)")
         
-        # 4. Editor com fonte e Checkbox grande para celular
+        # --- PAINEL DE EDIÇÃO ---
+        st.subheader("Controle de Status")
+        # Mostramos apenas Aprovação, Quem pede e Recado no editor
+        df_para_editar = df_filtrado[["Aprovação", col_b, col_c]]
+        
         df_editado = st.data_editor(
-            df_display,
+            df_para_editar,
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Aprovação": st.column_config.CheckboxColumn(
-                    "Aprovar?",
-                    help="Marque para exibir no telão",
-                    default=True,
-                    width="medium" # Deixa a coluna mais larga para o polegar
-                ),
-                col_b: st.column_config.TextColumn("Quem pede", width="medium"),
-                col_c: st.column_config.TextColumn("Recado", width="large"),
+                "Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small"),
+                col_b: "Solicitante",
+                col_c: "Conteúdo do Recado"
             },
-            key="editor_recados"
+            key="ed_recados_hoje"
         )
 
-        # 5. Botão de Salvar
-        if st.button("💾 SALVAR ALTERAÇÕES", use_container_width=True):
-            with st.spinner("Atualizando planilha..."):
-                # Mesclar edições de volta ao dataframe original
-                df.update(df_editado)
-                # Converter Booleano de volta para 1 e 0 para o Google Sheets
-                df["Aprovação"] = df["Aprovação"].apply(lambda x: 1 if x else 0)
+        if st.button("💾 ATUALIZAR STATUS", use_container_width=True):
+            with st.spinner("Gravando..."):
+                # Atualiza o DF original com as mudanças do filtrado
+                df.loc[df_filtrado.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
                 
-                # Atualizar Planilha
                 aba.clear()
                 aba.update([df.columns.values.tolist()] + df.values.tolist())
-                st.success("Planilha atualizada com sucesso!")
+                st.success("Atualizado!")
                 time.sleep(1)
                 st.rerun()
 
     except Exception as e:
-        st.error(f"Erro ao carregar aba 'cadastro_recados': {e}")
+        st.error(f"Erro no processamento: {e}")
 
 # --- ATUALIZAÇÃO DO ROTEAMENTO ---
 if sel == "Recados":
