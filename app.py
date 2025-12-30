@@ -6,10 +6,10 @@ import json
 from datetime import datetime, timedelta
 import time
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
+# --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Átrio - Recepção", layout="wide")
 
-# --- CSS PERSONALIZADO (Design do Telão e Sidebar) ---
+# --- 2. ESTILO VISUAL (Sidebar Azul e Botões Amarelos) ---
 st.markdown("""
 <style>
     [data-testid="stSidebar"] { background-color: #0e2433; }
@@ -17,215 +17,63 @@ st.markdown("""
     .stApp { background-color: #f0f2f6; }
     .stButton > button { background-color: #ffc107; color: #0e2433; border-radius: 10px; font-weight: bold; }
     h3 { color: #0e2433; border-left: 5px solid #ffc107; padding-left: 10px; }
-    .agenda-card { background-color: white; padding: 20px; border-radius: 10px; border-left: 8px solid #0e2433; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-    .agenda-col-c { font-size: 24px; font-weight: bold; color: #ffc107; background-color: #0e2433; padding: 5px 10px; border-radius: 5px; display: inline-block; }
-    .agenda-col-d { font-size: 22px; font-weight: bold; color: #0e2433; }
-    .texto-destaque { font-size: 30px; font-weight: bold; color: #0e2433; }
-    .texto-normal { font-size: 20px; color: #555; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- LOGIN ---
+# --- 3. SISTEMA DE LOGIN ---
 if "logado" not in st.session_state:
     st.session_state["logado"] = False
 
 def tela_login():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("<br><h1 style='text-align: center;'>🔐 Átrio - Login</h1>", unsafe_allow_html=True)
-        senha = st.text_input("Senha:", type="password")
+        st.markdown("<br><h1 style='text-align: center;'>🔐 Átrio - Acesso</h1>", unsafe_allow_html=True)
+        senha = st.text_input("Digite a senha administrativa:", type="password")
         if st.button("Entrar", use_container_width=True):
             if senha == st.secrets["acesso"]["senha_admin"]:
                 st.session_state["logado"] = True
                 st.rerun()
-            else: st.error("Senha incorreta!")
-        st.markdown("---")
-        st.markdown("<p style='text-align: center;'>Acesso Rápido aos Formulários:</p>", unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            st.link_button("🫂 Visitante", "https://docs.google.com/forms/d/e/1FAIpQLScuFOyVP1p0apBrBc0yuOak2AnznpbVemts5JIDe0bawIQIqw/viewform", use_container_width=True)
-            st.link_button("🙏 Oração", "https://docs.google.com/forms/d/e/1FAIpQLSe8W9x1Q9AwlSXytO3NDFvi2SgMKpfC6ICTVhMVH92S48KyyQ/viewform", use_container_width=True)
-        with c2:
-            st.link_button("📌 Recados", "https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform", use_container_width=True)
-            st.link_button("🎂 Parabéns", "https://docs.google.com/forms/d/e/1FAIpQLSdI4ConKeN9T1iKFHTgtO89f71vMXdjrbmdbb20zGK0nMUDtw/viewform", use_container_width=True)
+            else:
+                st.error("Senha incorreta!")
 
 if not st.session_state["logado"]:
     tela_login()
     st.stop()
 
-# --- CONEXÃO GOOGLE SHEETS ---
+# --- 4. CONEXÃO COM GOOGLE SHEETS ---
 @st.cache_resource
 def conectar():
     cred = json.loads(st.secrets["gcp_service_account"]["credenciais_json"])
     cred['private_key'] = cred['private_key'].replace("\\n", "\n")
     gc = gspread.service_account_from_dict(cred)
+    # Sua Planilha Mestra
     return gc.open_by_key("16zFy51tlxGmS-HQklP9_Ath4ZCv-s7Cmd38ayAhGZ_I")
 
-# --- UTILITÁRIOS ---
-def limpar_hora(valor):
-    v = str(valor).strip()
-    if " " in v:
-        try:
-            h = v.split(" ")[-1]
-            if ":" in h: return h[:5]
-        except: pass
-    return "⏰"
-
-def converter_coluna_data(df):
-    possiveis = ["Carimbo de data/hora", "Timestamp", "Data", "Date"]
-    col = next((c for c in df.columns if c in possiveis), df.columns[0])
-    df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
-    return df, col
-
-def filtrar_proxima_semana(df):
-    col = next((c for c in df.columns if "Data" in c and "Carimbo" not in c), df.columns[1])
-    df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
-    df = df.dropna(subset=[col])
-    hoje = datetime.now().date()
-    prox_segunda = hoje + timedelta(days=(0 - hoje.weekday() + 7) % 7)
-    df_s = df[(df[col].dt.date >= prox_segunda) & (df[col].dt.date <= prox_segunda + timedelta(days=6))].sort_values(by=col)
-    return df_s, col
-
-# --- FUNÇÃO DE GESTÃO (UNIFICADA E ROBUSTA) ---
-def mostrar_tabela_gestao(aba_nome, titulo, link_forms=None, filtrar_hoje=False):
-    st.header(titulo)
-    if link_forms:
-        st.link_button("➕ Realizar Novo Cadastro", link_forms, use_container_width=True)
-        st.markdown("---")
-
-    try:
-        sh = conectar(); aba = sh.worksheet(aba_nome)
-        dados = aba.get_all_records()
-        if not dados:
-            st.warning("Sem registros para exibir."); return
-        
-        df_full = pd.DataFrame(dados)
-        col_st = "Status" if "Status" in df_full.columns else "Aprovação"
-        if col_st not in df_full.columns: df_full[col_st] = ""
-        df_full["Reprovar?"] = df_full[col_st].astype(str).str.contains("Reprovado", case=False, na=False)
-        cols = ["Reprovar?"] + [c for c in df_full.columns if c not in ["Reprovar?", col_st]]
-        df_full = df_full[cols]
-
-        df_disp = df_full.copy()
-        if filtrar_hoje:
-            df_disp, c_dt = converter_coluna_data(df_disp)
-            df_disp = df_disp[df_disp[c_dt].dt.date == datetime.now().date()]
-            if df_disp.empty: st.info("Nenhum registro para hoje."); return
-
-        ed = st.data_editor(df_disp, num_rows="dynamic", use_container_width=True, key=f"ed_{aba_nome}",
-                            column_config={"Reprovar?": st.column_config.CheckboxColumn(width="small")})
-
-        if st.button("💾 Salvar Alterações", key=f"bt_{aba_nome}", use_container_width=True):
-            df_final = df_full.copy(); df_final.update(ed)
-            df_final[col_st] = df_final["Reprovar?"].apply(lambda x: "❌ Reprovado" if x else "✅ Aprovado")
-            df_final = df_final.drop(columns=["Reprovar?"]).astype(str)
-            aba.clear(); aba.update([df_final.columns.tolist()] + df_final.values.tolist())
-            st.success("Salvo!"); time.sleep(1); st.rerun()
-    except Exception as e: st.error(f"Erro: {e}")
-
-# --- APRESENTAÇÃO (DESIGN DO TELÃO) ---
-def mostrar_apresentacao():
-    st.markdown("## 📢 Resumo do Dia")
-    if st.button("🔄 Atualizar Lista"): st.cache_resource.clear(); st.rerun()
-    st.markdown("---")
-    sh = conectar(); hoje = datetime.now().date()
-
-    # 1. RECADOS (C destaque, B subtítulo)
-    try:
-        aba = sh.worksheet("cadastro_recados")
-        dados = aba.get_all_records()
-        if dados:
-            df = pd.DataFrame(dados)
-            df, col_data = converter_coluna_data(df)
-            df = df[df[col_data].dt.date == hoje]
-            if "Aprovação" in df.columns: 
-                df = df[~df["Aprovação"].astype(str).str.contains("Reprovado", case=False, na=False)]         
-            if not df.empty:
-                st.markdown("""<div style='text-align: center; background-color: #0e2433; color: #ffc107; padding: 10px; border-radius: 10px; margin-bottom: 20px; font-size: 20px; font-weight: bold;'>👋 "Cumprimento a igreja com a paz do Senhor!"</div>""", unsafe_allow_html=True)
-                st.markdown("### 📌 Recados e Avisos")
-                for _, row in df.iterrows():
-                    val_subtitulo = row.iloc[1] # Coluna B
-                    val_titulo = row.iloc[2]    # Coluna C
-                    st.markdown(f"""
-                    <div class="agenda-card">
-                        <div class="texto-destaque" style="font-style: italic;">"{val_titulo}"</div>
-                        <div class="texto-normal" style="margin-top:5px; font-size: 16px; color: #666;">Pede o recado: {val_subtitulo}</div>
-                    </div>""", unsafe_allow_html=True)
-                st.markdown("---")
-    except: pass
-
-
-    # 2. VISITANTES (C destaque, D/E ênfase H2)
-    try:
-        df = pd.DataFrame(sh.worksheet("cadastro_visitante").get_all_records())
-        df, c = converter_coluna_data(df)
-        df = df[(df[c].dt.date == hoje) & (~df["Aprovação"].str.contains("Reprovado", na=False))]
-        if not df.empty:
-            st.markdown("### 🫂 Visitantes")
-            for _, r in df.iterrows():
-                st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 32px;">{r.iloc[2]}</div><div class="texto-normal" style="color: #ffc107; background-color: #0e2433; display: inline-block; padding: 2px 10px; border-radius: 5px;">{r.iloc[3]} | {r.iloc[4]}</div></div>', unsafe_allow_html=True)
-    except: pass
-
-    # 3. AUSÊNCIA (Nome/Cargo destaque H1, Motivo H2)
-    try:
-        df = pd.DataFrame(sh.worksheet("cadastro_ausencia").get_all_records())
-        df, c = converter_coluna_data(df)
-        df = df[(df[c].dt.date == hoje) & (~df["Aprovação"].str.contains("Reprovado", na=False))]
-        if not df.empty:
-            st.markdown("### 📉 Ausências Justificadas")
-            for _, r in df.iterrows():
-                st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 30px;">{r.get("Nome", "")} - {r.get("Cargo", "")}</div><div class="texto-normal" style="font-size: 22px;"><b>Motivo:</b> {r.get("Motivo", "")}</div><div class="texto-normal" style="font-size: 16px; font-style: italic;">Obs: {r.get("Observação", "")}</div></div>', unsafe_allow_html=True)
-    except: pass
-
-    # 4. ORAÇÃO (B destaque H1, C/D destaque H2, Agrupado por C)
-    try:
-        df = pd.DataFrame(sh.worksheet("cadastro_oracao").get_all_records())
-        df = df[~df["Aprovação"].str.contains("Reprovado", na=False)]
-        if not df.empty:
-            st.markdown("### 🙏 Pedidos de Oração")
-            for mot in df.iloc[:, 2].unique():
-                st.markdown(f"<h4 style='color: #0e2433; border-bottom: 2px solid #ffc107;'>🎯 Motivo: {mot}</h4>", unsafe_allow_html=True)
-                for _, r in df[df.iloc[:, 2] == mot].iterrows():
-                    st.markdown(f'<div class="agenda-card" style="border-left: 8px solid #ffc107;"><div class="texto-destaque">{r.iloc[1]}</div><div class="texto-normal">Finalidade: {mot}</div><div style="font-size: 14px; color: #666;">Obs: {r.iloc[3]}</div></div>', unsafe_allow_html=True)
-    except: pass
-
-    # 5. PARABENIZAÇÃO (B destaque H1, C/D destaque H2, Agrupado por C, Ordenado por A)
-    try:
-        df = pd.DataFrame(sh.worksheet("cadastro_parabenizacao").get_all_records())
-        df = df[~df["Aprovação"].str.contains("Reprovado", na=False)].sort_values(by=df.columns[0])
-        if not df.empty:
-            st.markdown("### 🎂 Felicitações")
-            for tip in df.iloc[:, 2].unique():
-                st.markdown(f"#### ✨ {tip}")
-                for _, r in df[df.iloc[:, 2] == tip].iterrows():
-                    st.markdown(f'<div class="agenda-card"><div class="texto-destaque" style="font-size: 30px;">{r.iloc[1]}</div><div class="texto-normal">{tip} — {r.iloc[3]}</div></div>', unsafe_allow_html=True)
-    except: pass
-
-    # 6. PROGRAMAÇÃO
-    try:
-        df = pd.DataFrame(sh.worksheet("cadastro_agenda_semanal").get_all_records())
-        df_s, c = filtrar_proxima_semana(df)
-        if not df_s.empty:
-            st.markdown("### 🗓️ Programação da Semana")
-            for i, d in enumerate(["Segunda-Feira", "Terça-Feira", "Quarta-Feira", "Quinta-Feira", "Sexta-Feira", "Sábado", "Domingo"]):
-                df_d = df_s[df_s[c].dt.weekday == i]
-                if not df_d.empty:
-                    st.markdown(f"#### {d} ({df_d.iloc[0][c].strftime('%d/%m')})")
-                    for _, r in df_d.iterrows():
-                        st.markdown(f'<div class="agenda-card"><span class="agenda-col-c">{limpar_hora(r.iloc[1])}</span><span class="agenda-col-d">{r.iloc[2]}</span></div>', unsafe_allow_html=True)
-    except: pass
-
-# --- MENU ---
+# --- 5. MENU LATERAL ---
 with st.sidebar:
     st.image("logo_atrio.png", use_container_width=True)
-    sel = option_menu(None, ["Recados", "Visitantes", "Ausência", "Oração", "Parabenização", "Programação", "---", "Apresentação"], 
-        icons=["megaphone", "people", "x-circle", "heart", "star", "calendar", "", "cast"], default_index=0,
-        styles={"container": {"background-color": "#0e2433"}, "nav-link": {"color": "white"}, "nav-link-selected": {"background-color": "#ffc107", "color": "#0e2433"}})
+    sel = option_menu(
+        menu_title=None,
+        options=["Recados", "Visitantes", "Ausência", "Oração", "Parabenização", "Programação", "Apresentação"],
+        icons=["megaphone", "people", "x-circle", "heart", "star", "calendar", "cast"],
+        default_index=0,
+        styles={
+            "container": {"background-color": "#0e2433"},
+            "nav-link": {"color": "white", "font-size": "16px", "text-align": "left"},
+            "nav-link-selected": {"background-color": "#ffc107", "color": "#0e2433"}
+        }
+    )
 
-if sel == "Recados": mostrar_tabela_gestao("cadastro_recados", "📌 Recados", "https://docs.google.com/forms/d/e/1FAIpQLSfzuRLtsOTWWThzqFelTAkAwIULiufRmLPMc3BctfEDODY-1w/viewform", True)
-elif sel == "Visitantes": mostrar_tabela_gestao("cadastro_visitante", "🫂 Visitantes", "https://docs.google.com/forms/d/e/1FAIpQLScuFOyVP1p0apBrBc0yuOak2AnznpbVemts5JIDe0bawIQIqw/viewform", True)
-elif sel == "Ausência": mostrar_tabela_gestao("cadastro_ausencia", "📉 Ausências", "https://docs.google.com/forms/d/e/1FAIpQLSdlEV-UIY4L2ElRRL-uZqOUXiEtTfapQ0lkHbK1Fy-H1rcJag/viewform", True)
-elif sel == "Oração": mostrar_tabela_gestao("cadastro_oracao", "🙏 Orações", "https://docs.google.com/forms/d/e/1FAIpQLSe8W9x1Q9AwlSXytO3NDFvi2SgMKpfC6ICTVhMVH92S48KyyQ/viewform")
-elif sel == "Parabenização": mostrar_tabela_gestao("cadastro_parabenizacao", "🎂 Felicitações", "https://docs.google.com/forms/d/e/1FAIpQLSdI4ConKeN9T1iKFHTgtO89f71vMXdjrbmdbb20zGK0nMUDtw/viewform")
-elif sel == "Programação": mostrar_tabela_gestao("cadastro_agenda_semanal", "🗓️ Agenda", "https://docs.google.com/forms/d/e/1FAIpQLSc0kUREvy7XDG20tuG55XnaThdZ-nDm5eYp8pdM7M3YKJCPoQ/viewform")
-elif sel == "Apresentação": mostrar_apresentacao()
+# --- 6. ROTEAMENTO INICIAL ---
+if sel == "Recados":
+    st.title("📌 Gestão de Recados")
+    st.info("Área em construção...")
+
+elif sel == "Apresentação":
+    st.title("📢 Tela de Apresentação (Telão)")
+    st.info("Área em construção...")
+
+# (Outras opções seguem o mesmo padrão por enquanto)
+else:
+    st.title(f"ℹ️ {sel}")
+    st.info("Aguardando configuração de dados...")
