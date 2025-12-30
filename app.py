@@ -534,10 +534,10 @@ def gerenciar_programacao():
 # --- TELA DE APRESENTAÇÃO (RESUMO FINAL PARA LEITURA) ---
 
 def mostrar_apresentacao():
-    # Estilo de lembrete fixo com margem inferior ampliada
+    # 1. SAUDAÇÃO INICIAL FIXA
     st.markdown("""
-        <div style="background-color: #0e2433; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 50px;">
-            <h1 style="color: #ffc107; margin: 0; font-size: 30px;">👋 "CUMPRIMENTO A TODOS COM A PAZ DO SENHOR!"</h1>
+        <div style="background-color: #0e2433; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 40px;">
+            <h1 style="color: #ffc107; margin: 0; font-size: 28px;">"CUMPRIMENTO A IGREJA COM A PAZ DO SENHOR"</h1>
         </div>
     """, unsafe_allow_html=True)
 
@@ -545,109 +545,121 @@ def mostrar_apresentacao():
         sh = conectar()
         hoje = obter_hoje_brasil()
         
-        # Função interna para filtrar e padronizar o visual neutro com fonte 18px
-        def exibir_secao_apresentacao(titulo, df, data_col_idx, icone, verificar_hoje=True, regra_texto=""):
-            st.markdown(f"### {icone} {titulo}")
-            
-            if df.empty:
-                st.write("Sem registros ativos para hoje.")
-            else:
-                # Tratamento de data para filtro
-                df[df.columns[data_col_idx]] = pd.to_datetime(df[df.columns[data_col_idx]], dayfirst=True, errors='coerce').dt.date
-                
-                # Filtro de Aprovação (Vazio ou diferente de 0/False é Ativo)
+        # Função interna para padronizar os cartões (Fonte 18px)
+        def renderizar_cartao(conteudo):
+            st.markdown(f"""
+                <div style="background-color: #ffffff; padding: 18px; border-radius: 12px; margin-bottom: 12px; border: 1px solid #ddd; border-left: 8px solid #0e2433;">
+                    <div style="font-size: 18px; color: #0e2433; line-height: 1.5;">{conteudo}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        # Helper para filtrar dados ativos de hoje
+        def pegar_dados_ativos(aba_nome, data_idx=0, filtrar_data=True):
+            try:
+                df = pd.DataFrame(sh.worksheet(aba_nome).get_all_records())
+                if df.empty: return df
                 if "Aprovação" in df.columns:
                     df = df[~df["Aprovação"].astype(str).isin(['0', 'False', 'FALSO'])]
-                
-                # Filtro de Data
-                if verificar_hoje:
+                if filtrar_data:
+                    df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
                     df = df[df[df.columns[data_col_idx]] == hoje]
+                return df
+            except: return pd.DataFrame()
 
-                if df.empty:
-                    st.write("Sem registros ativos para hoje.")
-                else:
-                    for _, r in df.iterrows():
-                        # Montagem flexível baseada na regra de cada tela
-                        conteudo = regra_texto.format(*r)
-                        st.markdown(f"""
-                            <div style="background-color: #ffffff; padding: 20px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-left: 8px solid #0e2433;">
-                                <div style="font-size: 18px; color: #0e2433; line-height: 1.5;">{conteudo}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
+        # --- SETOR 1: AUSÊNCIAS ---
+        df_aus = pd.DataFrame(sh.worksheet("cadastro_ausencia").get_all_records())
+        if not df_aus.empty:
+            df_aus[df_aus.columns[0]] = pd.to_datetime(df_aus[df_aus.columns[0]], dayfirst=True, errors='coerce').dt.date
+            df_aus = df_aus[(df_aus[df_aus.columns[0]] == hoje) & (~df_aus["Aprovação"].astype(str).isin(['0', 'False', 'FALSO']))]
             
-            # Espaçamento generoso entre os módulos (Assuntos)
-            st.markdown("<br><br>", unsafe_allow_html=True)
+            if not df_aus.empty:
+                st.info("💡 JUSTIFICANDO A AUSÊNCIA DE ALGUMAS PESSOAS")
+                for _, r in df_aus.iterrows():
+                    renderizar_cartao(f"<b>👤 {r.iloc[1]} ({r.iloc[2]})</b><br>MOTIVO: {r.iloc[3]} | {r.iloc[4]}")
+                st.markdown("<br><br>", unsafe_allow_html=True)
 
-        # --- 1. AUSÊNCIAS ---
-        # Regra: B (C) na primeira linha, D e E na segunda
-        # iloc: [1]=Nome, [2]=Cargo, [3]=Motivo, [4]=Obs
-        regra_aus = "<b>👤 {1} ({2})</b><br>MOTIVO: {3} | OBS: {4}"
-        exibir_secao_apresentacao("1. AUSÊNCIAS JUSTIFICADAS", pd.DataFrame(sh.worksheet("cadastro_ausencia").get_all_records()), 0, "📉", regra_texto=regra_aus)
+        # --- SETOR 2: PROGRAMAÇÃO (SÓ DOMINGO) ---
+        if hoje.weekday() == 6: # 6 é Domingo
+            df_prog = pd.DataFrame(sh.worksheet("cadastro_agenda_semanal").get_all_records())
+            if not df_prog.empty:
+                col_ev = df_prog.columns[1]
+                df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
+                dias_seg = (0 - hoje.weekday() + 7) % 7
+                if dias_seg == 0: dias_seg = 7
+                ini, fim = hoje + timedelta(days=dias_seg), hoje + timedelta(days=dias_seg+6)
+                df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)]
+                if "Aprovação" in df_p.columns:
+                    df_p = df_p[~df_p["Aprovação"].astype(str).isin(['0', 'False', 'FALSO'])]
+                
+                if not df_p.empty:
+                    st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
+                    dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+                    for data_dia, grupo in df_p.sort_values(by=col_ev).groupby(df_p[col_ev].dt.date):
+                        st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
+                        for _, r in grupo.iterrows():
+                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {r[col_ev].strftime("%H:%M")}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
+                    st.markdown("<br><br>", unsafe_allow_html=True)
 
-        # --- 2. PROGRAMAÇÃO DA SEMANA ---
-        st.markdown("### 🗓️ 2. PROGRAMAÇÃO DA SEMANA")
-        aba_prog = sh.worksheet("cadastro_agenda_semanal")
-        df_prog = pd.DataFrame(aba_prog.get_all_records())
-        if not df_prog.empty:
-            col_ev = df_prog.columns[1] # Col B (Data/Hora)
-            df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
-            
-            dias_seg = (0 - hoje.weekday() + 7) % 7
-            if dias_seg == 0: dias_seg = 7
-            ini, fim = hoje + timedelta(days=dias_seg), hoje + timedelta(days=dias_seg+6)
-            
-            df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)]
-            if "Aprovação" in df_p.columns:
-                df_p = df_p[~df_p["Aprovação"].astype(str).isin(['0', 'False', 'FALSO'])]
-            
-            if df_p.empty:
-                st.write("Sem programação para a próxima semana.")
-            else:
-                dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
-                for data_dia, grupo in df_p.sort_values(by=col_ev).groupby(df_p[col_ev].dt.date):
-                    st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
-                    for _, r in grupo.iterrows():
-                        st.markdown(f"""
-                            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #eee; border-left: 5px solid #0e2433;">
-                                <div style="font-size: 18px; color: #0e2433;"><b>⏰ {r[col_ev].strftime('%H:%M')}</b> - {r.iloc[2]}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
-        st.markdown("<br><br>", unsafe_allow_html=True)
+        # --- SETOR 3: RECADOS ---
+        df_rec = pd.DataFrame(sh.worksheet("cadastro_recados").get_all_records())
+        if not df_rec.empty:
+            df_rec[df_rec.columns[0]] = pd.to_datetime(df_rec[df_rec.columns[0]], dayfirst=True, errors='coerce').dt.date
+            df_rec = df_rec[(df_rec[df_rec.columns[0]] == hoje) & (~df_rec["Aprovação"].astype(str).isin(['0', 'False', 'FALSO']))]
+            if not df_rec.empty:
+                st.info("💡 VAMOS AGORA PARA OS RECADOS SOLICITADOS")
+                for _, r in df_rec.iterrows():
+                    renderizar_cartao(f"<b>💬 {r.iloc[2]}</b><br><small>Solicitante: {r.iloc[1]}</small>")
+                st.markdown("<br><br>", unsafe_allow_html=True)
 
-        # --- 3. RECADOS ---
-        regra_rec = "<b>💬 {2}</b><br><small>SOLICITANTE: {1}</small>"
-        exibir_secao_apresentacao("3. RECADOS E AVISOS", pd.DataFrame(sh.worksheet("cadastro_recados").get_all_records()), 0, "📌", regra_texto=regra_rec)
+        # --- SETOR 4: ANIVERSÁRIOS ---
+        df_par = pd.DataFrame(sh.worksheet("cadastro_parabenizacao").get_all_records())
+        if not df_par.empty:
+            df_par[df_par.columns[0]] = pd.to_datetime(df_par[df_par.columns[0]], dayfirst=True, errors='coerce').dt.date
+            df_par = df_par[(df_par[df_par.columns[0]] == hoje) & (~df_par["Aprovação"].astype(str).isin(['0', 'False', 'FALSO']))]
+            if not df_par.empty:
+                st.success("🎂 A ASSEMBLEIA MINISTÉRIO IPIRANGA PARABENIZA A:")
+                for _, r in df_par.iterrows():
+                    renderizar_cartao(f"<b>✨ {r.iloc[1]} ({r.iloc[2]})</b><br>{r.iloc[3]}")
+                st.markdown("<br><br>", unsafe_allow_html=True)
 
-        # --- 4. VISITANTES ---
-        regra_vis = "<b>👤 {1}</b><br>CONVITE DE: {2} | IGREJA/DENOMINAÇÃO: {3}"
-        exibir_secao_apresentacao("4. VISITANTES DO DIA", pd.DataFrame(sh.worksheet("cadastro_visitante").get_all_records()), 0, "🫂", regra_texto=regra_vis)
+        # --- SETOR 5: VISITANTES (COM ROTEIRO DETALHADO) ---
+        df_vis = pd.DataFrame(sh.worksheet("cadastro_visitante").get_all_records())
+        if not df_vis.empty:
+            df_vis[df_vis.columns[0]] = pd.to_datetime(df_vis[df_vis.columns[0]], dayfirst=True, errors='coerce').dt.date
+            df_vis = df_vis[(df_vis[df_vis.columns[0]] == hoje) & (~df_vis["Aprovação"].astype(str).isin(['0', 'False', 'FALSO']))]
+            if not df_vis.empty:
+                st.warning("🫂 VAMOS CONHECER NOSSOS VISITANTES DE HOJE:")
+                st.markdown("*CONFORME EU CHAMAR GOSTARIA QUE DESSEM UM SINAL COM A MÃO OU FIQUEM EM PÉ PARA QUE A IGREJA OS VEJAM.*")
+                
+                for _, r in df_vis.iterrows():
+                    renderizar_cartao(f"<b>👤 {r.iloc[1]}</b><br>CONVITE DE: {r.iloc[2]} | IGREJA: {r.iloc[3]}")
+                
+                st.markdown("""
+                    <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; border: 1px solid #0e2433; margin-top: 20px;">
+                        <p style="font-size: 18px;"><b>PEÇO QUE A IGREJA SE COLOQUEM EM PÉ PARA RECEBERMOS NOSSOS VISITANTES COM UM ABRAÇO, UM SORRISO E UM APERTO DE MÃO.</b></p>
+                        <p style="font-size: 19px; color: #0e2433; font-weight: bold;">TODOS JUNTOS, COMO VAMOS RECEBER OS VISITANTES?</p>
+                        <p style="font-size: 18px; color: #d32f2f; font-weight: bold;">SEJAM BEM VINDOS EM NOME DE JESUS, SINTAM-SE BEM, VOLTEM SEMPRE, JESUS OS AMA E NÓS TAMBÉM.</p>
+                        <p style="text-align: center; font-style: italic;">🎶 "CORINHO COM A BASE MUSICAL"</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                st.markdown("<br><br>", unsafe_allow_html=True)
 
-# --- LEMBRETE DE TRANSIÇÃO (ENTRE VISITANTES E ORAÇÃO) ---
-        st.markdown("""
-            <div style="background-color: #e9ecef; padding: 20px; border-radius: 10px; border-left: 8px solid #ffc107; margin-bottom: 40px; text-align: center;">
-                <p style="font-size: 20px; color: #0e2433; font-style: italic; margin: 0;">
-                    "Ainda com a igreja de pé vamos interceder pelos nossos pedidos de oração"
-                </p>
-                <p style="font-size: 20px; color: #0e2433; font-weight: bold; margin: 10px 0 0 0;">
-                    "Para isso chamaremos o: _____________________"
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # --- 5. ORAÇÃO ---
-        regra_ora = "<b>🙏 PARA: {1}</b><br>MOTIVO: {2} | OBS: {3}"
-        exibir_secao_apresentacao("5. MOMENTO DE ORAÇÃO", pd.DataFrame(sh.worksheet("cadastro_oracao").get_all_records()), 0, "🙏", regra_texto=regra_ora)
-
-        # Frase final de incentivo
-        st.markdown("""
-            <div style="text-align: center; color: #666; font-style: italic; margin-top: 40px; padding-bottom: 50px;">
-                "Deus abençoe a sua leitura e a recepção de todos!"
-            </div>
-        """, unsafe_allow_html=True)
+        # --- SETOR 6: ORAÇÃO ---
+        df_ora = pd.DataFrame(sh.worksheet("cadastro_oracao").get_all_records())
+        if not df_ora.empty:
+            df_ora[df_ora.columns[0]] = pd.to_datetime(df_ora[df_ora.columns[0]], dayfirst=True, errors='coerce').dt.date
+            df_ora = df_ora[(df_ora[df_ora.columns[0]] == hoje) & (~df_ora["Aprovação"].astype(str).isin(['0', 'False', 'FALSO']))]
+            if not df_ora.empty:
+                st.markdown("<h3 style='text-align: center;'>🙏 COM A IGREJA EM PÉ</h3>", unsafe_allow_html=True)
+                st.info("TEMOS ALGUNS PEDIDOS DE ORAÇÃO")
+                for _, r in df_ora.iterrows():
+                    renderizar_cartao(f"<b>🙏 PARA: {r.iloc[1]}</b><br>MOTIVO: {r.iloc[2]} | OBS: {r.iloc[3]}")
+                
+                st.markdown("<p style='text-align: center; font-weight: bold; font-size: 20px;'>PARA ORAR POR ESTES PEDIDOS VOU CHAMAR O...</p>", unsafe_allow_html=True)
 
     except Exception as e:
-        st.error(f"Erro ao carregar Apresentação: {e}")
-          
+        st.error(f"Erro ao carregar roteiro de Apresentação: {e}")
+                
 # --- ATUALIZAÇÃO DO ROTEAMENTO ---
 
 if sel == "Recados":
