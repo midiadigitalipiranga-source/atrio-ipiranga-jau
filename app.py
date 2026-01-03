@@ -134,15 +134,20 @@ def gerenciar_recados():
 
 # --- MÓDULO DE VISITANTES ---
 
+import pandas as pd
+import streamlit as st
+import time
+
 def gerenciar_visitantes():
     st.title("🫂 Visitantes de Hoje")
-    st.link_button("➕ Novo Visitante", "https://docs.google.com/forms/d/e/1FAIpQLScuFOyVP1p0apBrBc0yuOak2AnznpbVemts5JIDe0bawIQIqw/viewform", use_container_width=True)
+    st.link_button("➕ Novo Visitante", "https://docs.google.com/forms/d/...", use_container_width=True)
     st.markdown("---")
 
     try:
         sh = conectar()
         aba = sh.worksheet("cadastro_visitante")
         dados = aba.get_all_records()
+        
         if not dados: 
             st.info("Nenhum dado encontrado na planilha.")
             return
@@ -150,66 +155,77 @@ def gerenciar_visitantes():
         df_original = pd.DataFrame(dados)
         col_data = df_original.columns[0]
         
-        # Conversão segura de data para o filtro
+        # 1. Conversão e Filtro
         df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
         hoje = obter_hoje_brasil()
-        
-        # Filtro de hoje (apenas date para evitar erro de timestamp)
         df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
 
         if df_hoje.empty:
-            st.info(f"📅 Nenhum visitante para hoje.")
+            st.info(f"📅 Nenhum visitante para hoje ({hoje.strftime('%d/%m/%Y')}).")
             return
 
-        # Lógica de Aprovação (Vazio = Ativo)
-        # Garante que a coluna Aprovação existe para o editor
-        
+        # 2. Correção do Erro de Aprovação
         if "Aprovação" not in df_hoje.columns:
             df_hoje["Aprovação"] = True
         else:
-            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x).upper() in ['0', 'False', 'FALSO'] else True)
+            # Tratamento seguro para converter valores da planilha em Booleanos
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(
+                lambda x: False if str(x).upper() in ['0', 'FALSE', 'FALSO', '0.0'] else True
+            )
 
-        col_nome = df_hoje.columns[1]   # Nome do Visitante
-        col_igreja = df_hoje.columns[2] # Igreja
-        col_convite = df_hoje.columns[3] # Quem convidou
+        col_nome = df_hoje.columns[1]
+        col_igreja = df_hoje.columns[2]
+        col_convite = df_hoje.columns[3]
 
-        # Visualização em Cards
-        
+        # 3. Visualização em Cards
         for i, row in df_hoje.iterrows():
             cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
-            st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433;"><div style="font-size: 18px; font-weight: bold;">👤 {row[col_nome]}</div><div style="font-size: 18px;">CONVITE DE: {row[col_igreja]} | IGREJA/DENOMINAÇÃO: {row[col_convite]}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'''
+                <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433;">
+                    <div style="font-size: 18px; font-weight: bold;">👤 {row[col_nome]}</div>
+                    <div style="font-size: 14px;">CONVITE DE: {row[col_igreja]} | IGREJA: {row[col_convite]}</div>
+                </div>
+            ''', unsafe_allow_html=True)
 
-        # Editor de Dados
+        # 4. Editor de Dados
+        st.markdown('<div style="margin-top: 50px;"></div>', unsafe_allow_html=True)
         st.markdown("### ⚙️ Painel de Edição")
         df_editado = st.data_editor(
             df_hoje[["Aprovação", col_nome, col_igreja, col_convite]],
-            use_container_width=True, hide_index=True,
+            use_container_width=True, 
+            hide_index=True,
             column_config={"Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small")},
             key="ed_visitantes"
         )
 
-        if st.button("💾 SALVAR VISITANTES", use_container_width=True):
+        if st.button("💾 SALVAR ALTERAÇÕES", use_container_width=True):
+            # 5. Sincronização cuidadosa
+            # Atualizamos o df_original apenas nas linhas que estavam no df_hoje (usando o index)
+            df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].values
+            df_original.loc[df_hoje.index, col_nome] = df_editado[col_nome].values
+            df_original.loc[df_hoje.index, col_igreja] = df_editado[col_igreja].values
+            df_original.loc[df_hoje.index, col_convite] = df_editado[col_convite].values
             
-            # SINCRONIZAÇÃO DAS ALTERAÇÕES (A correção principal está aqui)
-            # 1. Sincroniza os dados do editor para o DataFrame original
-            df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
-            df_original.loc[df_hoje.index, col_nome] = df_editado[col_nome]
-            df_original.loc[df_hoje.index, col_igreja] = df_editado[col_igreja]
-            df_original.loc[df_hoje.index, col_convite] = df_editado[col_convite]
-            
-            # Preparação para o Google Sheets
-            # 2. PREPARAÇÃO CRUCIAL CONTRA O ERRO 'NAN'    
+            # 6. Preparação para o Google Sheets (Evitar erro de JSON/NaN)
             df_para_salvar = df_original.copy()
-                
-            # Converte datas para texto
-            df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
-            aba.clear()
             
-            # Envia cabeçalhos e valores
-            aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
-            st.success("✅ Visitantes Atualizados!")
-            time.sleep(1); st.rerun()            
-    except Exception as e: st.error(f"Erro: {e}")
+            # Converte a data de volta para string formatada
+            df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+            
+            # Substitui valores nulos (NaN) por vazio para não dar erro no update
+            df_para_salvar = df_para_salvar.fillna("")
+            
+            # Limpa e atualiza a planilha
+            aba.clear()
+            lista_final = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
+            aba.update(lista_final)
+            
+            st.success("✅ Dados sincronizados com sucesso!")
+            time.sleep(1)
+            st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro crítico: {e}")
 
 # --- MÓDULO DE AUSÊNCIA ---
 
