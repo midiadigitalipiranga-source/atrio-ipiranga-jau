@@ -188,26 +188,36 @@ def gerenciar_visitantes():
             with st.spinner("Atualizando planilha..."):
             
                 # SINCRONIZAÇÃO DAS ALTERAÇÕES (A correção principal está aqui)
+                # 1. Sincroniza os dados do editor para o DataFrame original
                 df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
                 df_original.loc[df_hoje.index, col_nome] = df_editado[col_nome].values
                 df_original.loc[df_hoje.index, col_igreja] = df_editado[col_igreja].values
                 df_original.loc[df_hoje.index, col_convite] = df_editado[col_convite].values
             
-                # Preparação para o Google Sheets    
+                # Preparação para o Google Sheets
+                # 2. PREPARAÇÃO CRUCIAL CONTRA O ERRO 'NAN'    
                 df_para_salvar = df_original.copy()
-                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+                
+                # Preenche qualquer valor nulo (NaN) com 0 ou texto vazio para evitar erro JSON
+                df_para_salvar = df_para_salvar.fillna("")
             
                 # Se a coluna Aprovação não existia no original, ela precisa ser incluída no salvamento
                 if "Aprovação" not in df_original.columns:
                     
                     # Adiciona no final se for a primeira vez
                     df_para_salvar["Aprovação"] = df_original["Aprovação"]
-                    
+                
+                # Converte datas para texto
+                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+
+                # 3. ENVIO PARA O GOOGLE
                 aba.clear()
-            
-                # Envia cabeçalhos e valores
-                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
-            
+
+                # O .values.tolist() do pandas às vezes mantém o erro, então convertemos via lista pura
+                lista_final = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
+                
+                aba.update(lista_final)
+                
                 st.success("✅ Visitantes Atualizados!")
                 time.sleep(1); 
                 st.rerun()
