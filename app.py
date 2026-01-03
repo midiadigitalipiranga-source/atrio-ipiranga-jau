@@ -184,7 +184,7 @@ def gerenciar_visitantes():
             st.markdown(f'''
                 <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433;">
                     <div style="font-size: 18px; font-weight: bold;">👤 {row[col_nome]}</div>
-                    <div style="font-size: 14px;">CONVITE DE: {row[col_igreja]} | IGREJA: {row[col_convite]}</div>
+                    <div style="font-size: 18px;">CONVITE DE: {row[col_igreja]} | IGREJA: {row[col_convite]}</div>
                 </div>
             ''', unsafe_allow_html=True)
 
@@ -230,44 +230,54 @@ def gerenciar_visitantes():
 
 # --- MÓDULO DE AUSÊNCIA ---
 
+import pandas as pd
+import streamlit as st
+import time
+
 def gerenciar_ausencia():
     st.title("📉 Ausências de Hoje")
-    st.link_button("➕ Justificar Ausência", "https://docs.google.com/forms/d/e/1FAIpQLSdlEV-UIY4L2ElRRL-uZqOUXiEtTfapQ0lkHbK1Fy-H1rcJag/viewform", use_container_width=True)
+    st.link_button("➕ Justificar Ausência", "https://URL_DO_FORM", use_container_width=True)
     st.markdown("---")
 
     try:
         sh = conectar()
         aba = sh.worksheet("cadastro_ausencia")
         dados = aba.get_all_records()
-        if not dados: return
+        
+        if not dados:
+            st.info("Planilha vazia.")
+            return
         
         df_original = pd.DataFrame(dados)
         col_data = df_original.columns[0]
+        
+        # Converter para data com tratamento de erro robusto
         df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
         
         hoje = obter_hoje_brasil()
-        df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
+        # Filtramos as linhas de hoje
+        mask_hoje = df_original[col_data].dt.date == hoje
+        df_hoje = df_original[mask_hoje].copy()
 
         if df_hoje.empty:
             st.info(f"📅 Nenhuma ausência registrada para hoje ({hoje.strftime('%d/%m/%Y')}).")
+            # Mesmo vazio, podemos querer ver o painel se houver erro de data, 
+            # mas por segurança vamos parar aqui
             return
 
-        # Lógica de Aprovação (Vazio ou novo = Ativo/Verde)
+        # Lógica de Aprovação
         if "Aprovação" not in df_hoje.columns:
             df_hoje["Aprovação"] = True
         else:
-            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x).upper() in ['0', 'FALSE', 'FALSO', ''] else True)
 
-        # Mapeamento de Colunas conforme solicitado
-        col_nome = df_hoje.columns[1]   # Col B
-        col_cargo = df_hoje.columns[2]  # Col C
-        col_motivo = df_hoje.columns[3] # Col D
-        col_obs = df_hoje.columns[4]    # Col E
+        # Mapeamento dinâmico de colunas
+        cols = df_hoje.columns
+        col_nome, col_cargo, col_motivo, col_obs = cols[1], cols[2], cols[3], cols[4]
 
-        # Exibição visual nos cards para leitura no Tablet
+        # Cards Visuais
         for i, row in df_hoje.iterrows():
             cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
-            # Montagem do texto conforme sua regra: Nome (Cargo) / Motivo Obs
             st.markdown(f"""
                 <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
                     <div style="font-size: 18px; font-weight: bold;">👤 {row[col_nome]} ({row[col_cargo]})</div>
@@ -275,43 +285,44 @@ def gerenciar_ausencia():
                 </div>
             """, unsafe_allow_html=True)
 
-        # Painel de Edição
         st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)
         st.markdown("### ⚙️ Painel de Edição")
         df_editado = st.data_editor(
             df_hoje[["Aprovação", col_nome, col_cargo, col_motivo, col_obs]],
             use_container_width=True, 
             hide_index=True,
-            column_config={
-                "Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small"),
-                col_nome: "Nome",
-                col_cargo: "Cargo",
-                col_motivo: "Motivo",
-                col_obs: "Observação"
-            },
             key="ed_ausencia"
         )
 
-        if st.button("💾 SALVAR AUSÊNCIAS", use_container_width=True):
-            with st.spinner("Sincronizando..."):
-                # Atualiza Aprovação e campos de texto no DF original
-                df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
-                df_original.loc[df_hoje.index, col_nome] = df_editado[col_nome]
-                df_original.loc[df_hoje.index, col_cargo] = df_editado[col_cargo]
-                df_original.loc[df_hoje.index, col_motivo] = df_editado[col_motivo]
-                df_original.loc[df_hoje.index, col_obs] = df_editado[col_obs]
-                
-                # Prepara para salvar voltando a data para string
+        if st.button("💾 SALVAR ALTERAÇÕES", use_container_width=True):
+            with st.spinner("Sincronizando com Google Sheets..."):
+                # 1. Atualizar apenas as linhas de hoje no DataFrame original
+                for idx_editado, row_edit in df_editado.iterrows():
+                    # Mapeamos de volta para o índice original do df_original
+                    idx_original = df_hoje.index[idx_editado]
+                    df_original.at[idx_original, "Aprovação"] = 1 if row_edit["Aprovação"] else 0
+                    df_original.at[idx_original, col_nome] = row_edit[col_nome]
+                    df_original.at[idx_original, col_cargo] = row_edit[col_cargo]
+                    df_original.at[idx_original, col_motivo] = row_edit[col_motivo]
+                    df_original.at[idx_original, col_obs] = row_edit[col_obs]
+
+                # 2. Preparação CRÍTICA para salvar
                 df_para_salvar = df_original.copy()
+                # Converter data de volta para string (evita erro de JSON no Google)
                 df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+                # Substituir NaT/NaN por string vazia (ESSENCIAL)
+                df_para_salvar = df_para_salvar.fillna("")
+
+                # 3. Salvar de forma segura
+                lista_final = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
+                aba.update(lista_final, range_name="A1") # Update direto sem clear prévio
                 
-                aba.clear()
-                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
-                st.success("✅ Ausências atualizadas!")
-                time.sleep(1); st.rerun()
+                st.success("✅ Atualizado com sucesso!")
+                time.sleep(1)
+                st.rerun()
 
     except Exception as e:
-        st.error(f"Erro ao carregar aba 'cadastro_ausencia': {e}")
+        st.error(f"Erro Crítico: {e}")
 
 # --- MÓDULO DE ORAÇÃO ---
 
