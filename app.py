@@ -149,8 +149,12 @@ def gerenciar_visitantes():
         
         df_original = pd.DataFrame(dados)
         col_data = df_original.columns[0]
+        
+        # Conversão segura de data para o filtro
         df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
         hoje = obter_hoje_brasil()
+        
+        # Filtro de hoje (apenas date para evitar erro de timestamp)
         df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
 
         if df_hoje.empty:
