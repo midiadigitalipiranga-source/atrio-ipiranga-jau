@@ -167,7 +167,7 @@ def gerenciar_visitantes():
         if "Aprovação" not in df_hoje.columns:
             df_hoje["Aprovação"] = True
         else:
-            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: Fals if str(x) in e['0', 'False', 'FALSO'] else True)
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x).upper() in ['0', 'False', 'FALSO'] else True)
 
         col_nome = df_hoje.columns[1]   # Nome do Visitante
         col_igreja = df_hoje.columns[2] # Igreja
