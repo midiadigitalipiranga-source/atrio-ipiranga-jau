@@ -326,6 +326,10 @@ def gerenciar_ausencia():
 
 # --- MÓDULO DE ORAÇÃO ---
 
+import pandas as pd
+import streamlit as st
+import time
+
 def gerenciar_oracao():
     st.title("🙏 Pedidos de Oração")
     st.link_button("➕ Novo Pedido de Oração", "https://docs.google.com/forms/d/e/1FAIpQLSe8W9x1Q9AwlSXytO3NDFvi2SgMKpfC6ICTVhMVH92S48KyyQ/viewform", use_container_width=True)
@@ -342,24 +346,26 @@ def gerenciar_oracao():
         df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
         
         hoje = obter_hoje_brasil()
-        df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
+        # Criamos o filtro para usar tanto na exibição quanto na hora de salvar
+        mask_hoje = df_original[col_data].dt.date == hoje
+        df_hoje = df_original[mask_hoje].copy()
 
         if df_hoje.empty:
             st.info(f"📅 Nenhum pedido de oração para hoje ({hoje.strftime('%d/%m/%Y')}).")
             return
 
-        # Lógica de Aprovação (Vazio ou novo = Ativo/Verde)
+        # Lógica de Aprovação (Sua lógica original preservada)
         if "Aprovação" not in df_hoje.columns:
             df_hoje["Aprovação"] = True
         else:
             df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
 
-        # Mapeamento de Colunas
+        # Mapeamento de Colunas (Seu original)
         col_quem = df_hoje.columns[1]   # Col B (Para quem)
         col_motivo = df_hoje.columns[2] # Col C (Motivo)
         col_obs = df_hoje.columns[3]    # Col D (Observação)
 
-        # Exibição visual nos cards
+        # Exibição visual nos cards (Seu layout original preservado)
         for i, row in df_hoje.iterrows():
             cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
             st.markdown(f"""
@@ -369,7 +375,7 @@ def gerenciar_oracao():
                 </div>
             """, unsafe_allow_html=True)
 
-        # Painel de Edição
+        # Painel de Edição (Seu layout original)
         st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)
         st.markdown("### ⚙️ Painel de Edição")
         df_editado = st.data_editor(
@@ -387,16 +393,26 @@ def gerenciar_oracao():
 
         if st.button("💾 SALVAR PEDIDOS DE ORAÇÃO", use_container_width=True):
             with st.spinner("Sincronizando..."):
-                df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
-                df_original.loc[df_hoje.index, col_quem] = df_editado[col_quem]
-                df_original.loc[df_hoje.index, col_motivo] = df_editado[col_motivo]
-                df_original.loc[df_hoje.index, col_obs] = df_editado[col_obs]
+                # --- CORREÇÃO AQUI ---
+                # 1. Atualizamos o df_original APENAS nas linhas de hoje
+                df_original.loc[mask_hoje, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+                df_original.loc[mask_hoje, col_quem] = df_editado[col_quem].values
+                df_original.loc[mask_hoje, col_motivo] = df_editado[col_motivo].values
+                df_original.loc[mask_hoje, col_obs] = df_editado[col_obs].values
                 
+                # 2. Preparamos uma cópia para salvar sem estragar o histórico
                 df_para_salvar = df_original.copy()
-                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
                 
+                # 3. Tratamos a data para string e removemos os NaNs (O que impedia de salvar)
+                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S').fillna("")
+                df_para_salvar = df_para_salvar.fillna("") # Garante que nada esteja "nulo"
+                
+                # 4. Atualização completa da planilha
                 aba.clear()
-                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
+                # Garantimos que a lista de listas tenha os cabeçalhos e os dados tratados
+                corpo_dados = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
+                aba.update(corpo_dados)
+                
                 st.success("✅ Pedidos de oração atualizados!")
                 time.sleep(1); st.rerun()
 
