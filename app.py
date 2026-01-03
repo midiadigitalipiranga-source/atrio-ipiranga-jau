@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timedelta
 import time
 import pytz
+
 # --- FUNÇÃO AUXILIAR PARA OBTER DATA BRASIL ---
 def obter_hoje_brasil():
     fuso = pytz.timezone('America/Sao_Paulo')
@@ -142,7 +143,9 @@ def gerenciar_visitantes():
         sh = conectar()
         aba = sh.worksheet("cadastro_visitante")
         dados = aba.get_all_records()
-        if not dados: return
+        if not dados: 
+            st.info("Nenhum dado encontrado na planilha.")
+            return
         
         df_original = pd.DataFrame(dados)
         col_data = df_original.columns[0]
@@ -155,19 +158,25 @@ def gerenciar_visitantes():
             return
 
         # Lógica de Aprovação (Vazio = Ativo)
+        # Garante que a coluna Aprovação existe para o editor
+        
         if "Aprovação" not in df_hoje.columns:
             df_hoje["Aprovação"] = True
         else:
-            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: Fals if str(x) in e['0', 'False', 'FALSO'] else True)
 
         col_nome = df_hoje.columns[1]   # Nome do Visitante
         col_igreja = df_hoje.columns[2] # Igreja
         col_convite = df_hoje.columns[3] # Quem convidou
 
+        # Visualização em Cards
+        
         for i, row in df_hoje.iterrows():
             cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
             st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433;"><div style="font-size: 18px; font-weight: bold;">👤 {row[col_nome]}</div><div style="font-size: 18px;">CONVITE DE: {row[col_igreja]} | IGREJA/DENOMINAÇÃO: {row[col_convite]}</div></div>', unsafe_allow_html=True)
 
+        # Editor de Dados
+        
         df_editado = st.data_editor(
             df_hoje[["Aprovação", col_nome, col_igreja, col_convite]],
             use_container_width=True, hide_index=True,
@@ -176,15 +185,33 @@ def gerenciar_visitantes():
         )
 
         if st.button("💾 SALVAR VISITANTES", use_container_width=True):
-            df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
-            df_original.loc[df_hoje.index, col_nome] = df_editado[col_nome]
+            with st.spinner("Atualizando planilha..."):
             
-            df_para_salvar = df_original.copy()
-            df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
-            aba.clear()
-            aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
-            st.success("✅ Visitantes Atualizados!")
-            time.sleep(1); st.rerun()
+                # SINCRONIZAÇÃO DAS ALTERAÇÕES (A correção principal está aqui)
+                df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+                df_original.loc[df_hoje.index, col_nome] = df_editado[col_nome].values
+                df_original.loc[df_hoje.index, col_igreja] = df_editado[col_igreja].values
+                df_original.loc[df_hoje.index, col_convite] = df_editado[col_convite].values
+            
+                # Preparação para o Google Sheets    
+                df_para_salvar = df_original.copy()
+                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+            
+                # Se a coluna Aprovação não existia no original, ela precisa ser incluída no salvamento
+                if "Aprovação" not in df_original.columns:
+                    
+                    # Adiciona no final se for a primeira vez
+                    df_para_salvar["Aprovação"] = df_original["Aprovação"]
+                    
+                aba.clear()
+            
+                # Envia cabeçalhos e valores
+                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
+            
+                st.success("✅ Visitantes Atualizados!")
+                time.sleep(1); 
+                st.rerun()
+            
     except Exception as e: st.error(f"Erro: {e}")
 
 # --- MÓDULO DE AUSÊNCIA ---
