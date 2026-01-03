@@ -111,6 +111,7 @@ def gerenciar_recados():
             cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
             st.markdown(f'<div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);"><div style="font-size: 18px; font-weight: bold;">{row[col_b]}</div><div style="font-size: 18px;">{row[col_c]}</div></div>', unsafe_allow_html=True)
 
+        st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)
         st.markdown("### ⚙️ Painel de Edição")
         df_editado = st.data_editor(
             df_hoje[["Aprovação", col_b, col_c]],
@@ -188,7 +189,7 @@ def gerenciar_visitantes():
             ''', unsafe_allow_html=True)
 
         # 4. Editor de Dados
-        st.markdown('<div style="margin-top: 50px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)
         st.markdown("### ⚙️ Painel de Edição")
         df_editado = st.data_editor(
             df_hoje[["Aprovação", col_nome, col_igreja, col_convite]],
@@ -275,6 +276,7 @@ def gerenciar_ausencia():
             """, unsafe_allow_html=True)
 
         # Painel de Edição
+        st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)
         st.markdown("### ⚙️ Painel de Edição")
         df_editado = st.data_editor(
             df_hoje[["Aprovação", col_nome, col_cargo, col_motivo, col_obs]],
@@ -357,6 +359,7 @@ def gerenciar_oracao():
             """, unsafe_allow_html=True)
 
         # Painel de Edição
+        st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)
         st.markdown("### ⚙️ Painel de Edição")
         df_editado = st.data_editor(
             df_hoje[["Aprovação", col_quem, col_motivo, col_obs]],
@@ -435,6 +438,7 @@ def gerenciar_parabenizacao():
             """, unsafe_allow_html=True)
 
         # Painel de Edição
+        st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)
         st.markdown("### ⚙️ Painel de Edição")
         df_editado = st.data_editor(
             df_hoje[["Aprovação", col_nome, col_tipo, col_obs]],
@@ -537,6 +541,7 @@ def gerenciar_programacao():
 
         # Painel de Edição
         st.markdown("---")
+        st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)        
         st.markdown("### ⚙️ Painel de Edição da Semana")
         
         # Criamos uma coluna formatada para o editor mostrar data/hora legível
