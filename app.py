@@ -732,7 +732,7 @@ def mostrar_apresentacao():
         df_vis = carregar_dados_seguro("cadastro_visitante")
         if not df_vis.empty:
             st.warning("🫂 VAMOS CONHECER NOSSOS VISITANTES DE HOJE:")
-            st.markdown("**CONFORME EU CHAMAR GOSTARIA QUE DESSEM UM SINAL COM A MÃO OU FIQUEM EM PÉ PARA QUE A IGREJA OS VEJAM.**")
+            st.markdown("**CONFORME EU CHAMAR GOSTARIA QUE DESSEM UM SINAL COM A MÃO OU FIQUEM EM PÉ PARA QUE A IGREJA OS CONHEÇAM.**")
             for _, r in df_vis.iterrows():
                 renderizar_cartao(f"<b>👤 {r.iloc[1]}</b><br>CONVITE DE: {r.iloc[2]} | IGREJA: {r.iloc[3]}")
             
