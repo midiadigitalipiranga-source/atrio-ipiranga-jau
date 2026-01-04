@@ -500,6 +500,10 @@ def gerenciar_parabenizacao():
 
 # --- MÓDULO DE PROGRAMAÇÃO ---
 
+import pandas as pd
+import streamlit as st
+import time
+
 def gerenciar_programacao():
     st.title("🗓️ Programação da Próxima Semana")
     st.link_button("➕ Novo Evento", "https://docs.google.com/forms/d/e/1FAIpQLSc0kUREvy7XDG20tuG55XnaThdZ-nDm5eYp8pdM7M3YKJCPoQ/viewform", use_container_width=True)
@@ -587,19 +591,37 @@ def gerenciar_programacao():
         )
 
         if st.button("💾 SALVAR PROGRAMAÇÃO", use_container_width=True):
-            with st.spinner("Sincronizando..."):
+            with st.spinner("Sincronizando com o Átrio..."):
+                # 1. Sincroniza as edições do editor de volta para o DataFrame original
+                # Usamos o índice original para garantir que a linha certa seja atualizada
                 df_original.loc[df_semana.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
                 df_original.loc[df_semana.index, col_evento_nome] = df_editado[col_evento_nome]
                 
+                # 2. PREPARAÇÃO DOS DADOS PARA O SHEETS
+                # Criamos uma cópia para não afetar a exibição atual do Streamlit
                 df_para_salvar = df_original.copy()
-                # Converte a data de volta para o formato que o Sheets aceita
-                df_para_salvar[col_evento_data] = df_para_salvar[col_evento_data].dt.strftime('%d/%m/%Y %H:%M:%S')
                 
-                aba.clear()
-                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
-                st.success("✅ Agenda atualizada!")
-                time.sleep(1); st.rerun()
-
+                # Tratamento crucial: converter Timestamps para String e preencher Nulos
+                # O Google Sheets não aceita objetos de data do Python via API de forma direta em listas
+                for col in df_para_salvar.columns:
+                    if pd.api.types.is_datetime64_any_dtype(df_para_salvar[col]):
+                        df_para_salvar[col] = df_para_salvar[col].dt.strftime('%d/%m/%Y %H:%M:%S')
+                
+                # Substitui NaN (valores vazios) por string vazia para evitar erro de JSON
+                df_para_salvar = df_para_salvar.fillna("")
+                
+                # 3. ATUALIZAÇÃO SEGURA (Sem aba.clear())
+                # Transformamos o DF em uma lista de listas (incluindo o cabeçalho)
+                lista_para_salvar = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
+                
+                # Atualizamos a partir da célula A1. 
+                # Isso sobrescreve os dados existentes sem apagar a planilha toda primeiro.
+                aba.update("A1", lista_para_salvar)
+                
+                st.success("✅ Agenda atualizada com sucesso!")
+                time.sleep(1)
+                st.rerun()
+    
     except Exception as e:
         st.error(f"Erro na Programação: {e}")
   
