@@ -482,18 +482,31 @@ def gerenciar_parabenizacao():
 
         if st.button("💾 SALVAR FELICITAÇÕES", use_container_width=True):
             with st.spinner("Sincronizando..."):
+                # 1. Atualiza apenas os registros de HOJE no DataFrame original
+                # Usamos .loc com os índices originais para preservar todas as outras linhas
                 df_original.loc[df_hoje.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
                 df_original.loc[df_hoje.index, col_nome] = df_editado[col_nome]
                 df_original.loc[df_hoje.index, col_tipo] = df_editado[col_tipo]
                 df_original.loc[df_hoje.index, col_obs] = df_editado[col_obs]
                 
-                df_para_salvar = df_original.copy()
-                df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
+                # 2. Preparação para salvar (tratamento de NaT/NaN para evitar erros no gspread)
+                df_para_salvar = df_original.fillna("") # Troca nulos por vazio
                 
-                aba.clear()
-                aba.update([df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
-                st.success("✅ Felicitações atualizadas!")
-                time.sleep(1); st.rerun()
+                # Converte datas de volta para string apenas para o upload
+                df_para_salvar[col_data] = df_para_salvar[col_data].apply(
+                    lambda x: x.strftime('%d/%m/%Y %H:%M:%S') if pd.notnull(x) else ""
+                )
+                
+                # 3. Atualização segura: sobrescreve a partir da célula A1 sem deletar o que vem depois (se houver)
+                # O gspread aceita o update com a lista de listas
+                lista_final = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
+                
+                # IMPORTANTE: Removido o aba.clear() para evitar perda total em caso de falha
+                aba.update('A1', lista_final) 
+                
+                st.success("✅ Felicitações atualizadas com sucesso!")
+                time.sleep(1)
+                st.rerun()
 
     except Exception as e:
         st.error(f"Erro ao carregar aba 'cadastro_parabenizacao': {e}")
