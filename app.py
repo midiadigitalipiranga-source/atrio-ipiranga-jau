@@ -324,14 +324,16 @@ def gerenciar_ausencia():
     except Exception as e:
         st.error(f"Erro Crítico: {e}")
 
-# --- MÓDULO DE ORAÇÃO ---
-
 import pandas as pd
 import streamlit as st
 import time
+from datetime import timedelta # Importante para calcular os dias anteriores
 
 def gerenciar_oracao():
     st.title("🙏 Pedidos de Oração")
+    # Exibe subtítulo informando o período visualizado
+    st.caption("Visualizando pedidos de Hoje e dos últimos 2 dias.")
+    
     st.link_button("➕ Novo Pedido de Oração", "https://docs.google.com/forms/d/e/1FAIpQLSe8W9x1Q9AwlSXytO3NDFvi2SgMKpfC6ICTVhMVH92S48KyyQ/viewform", use_container_width=True)
     st.markdown("---")
 
@@ -346,40 +348,56 @@ def gerenciar_oracao():
         df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
         
         hoje = obter_hoje_brasil()
-        # Criamos o filtro para usar tanto na exibição quanto na hora de salvar
-        mask_hoje = df_original[col_data].dt.date == hoje
-        df_hoje = df_original[mask_hoje].copy()
+        
+        # ### ALTERAÇÃO AQUI: LÓGICA DE DATA (HOJE + 2 DIAS ATRÁS) ###
+        # Calcula a data limite (2 dias atrás)
+        data_limite = hoje - timedelta(days=2)
+        
+        # A máscara agora pega tudo que for MAIOR ou IGUAL a data limite E MENOR ou IGUAL a hoje
+        mask_periodo = (df_original[col_data].dt.date >= data_limite) & (df_original[col_data].dt.date <= hoje)
+        
+        # Cria o DataFrame de trabalho com base nesse período estendido
+        # Ordenamos por data (do mais recente para o mais antigo) para facilitar a leitura
+        df_visualizacao = df_original[mask_periodo].sort_values(by=col_data, ascending=False).copy()
+        # ###########################################################
 
-        if df_hoje.empty:
-            st.info(f"📅 Nenhum pedido de oração para hoje ({hoje.strftime('%d/%m/%Y')}).")
+        if df_visualizacao.empty:
+            st.info(f"📅 Nenhum pedido de oração encontrado entre {data_limite.strftime('%d/%m')} e {hoje.strftime('%d/%m')}.")
             return
 
-        # Lógica de Aprovação (Sua lógica original preservada)
-        if "Aprovação" not in df_hoje.columns:
-            df_hoje["Aprovação"] = True
+        # Lógica de Aprovação
+        if "Aprovação" not in df_visualizacao.columns:
+            df_visualizacao["Aprovação"] = True
         else:
-            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
+            df_visualizacao["Aprovação"] = df_visualizacao["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
 
-        # Mapeamento de Colunas (Seu original)
-        col_quem = df_hoje.columns[1]   # Col B (Para quem)
-        col_motivo = df_hoje.columns[2] # Col C (Motivo)
-        col_obs = df_hoje.columns[3]    # Col D (Observação)
+        # Mapeamento de Colunas
+        col_quem = df_visualizacao.columns[1]   # Col B (Para quem)
+        col_motivo = df_visualizacao.columns[2] # Col C (Motivo)
+        col_obs = df_visualizacao.columns[3]    # Col D (Observação)
 
-        # Exibição visual nos cards (Seu layout original preservado)
-        for i, row in df_hoje.iterrows():
+        # Exibição visual nos cards
+        for i, row in df_visualizacao.iterrows():
             cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
+            # Adicionei a data no card para saber de quando é o pedido
+            data_formatada = row[col_data].strftime('%d/%m')
+            
             st.markdown(f"""
                 <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
-                    <div style="font-size: 18px; font-weight: bold;">🙏 PARA: {row[col_quem]}</div>
-                    <div style="font-size: 18px;">MOTIVO: {row[col_motivo]} | OBS: {row[col_obs]}</div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="font-size: 18px; font-weight: bold;">🙏 PARA: {row[col_quem]}</span>
+                        <span style="font-size: 14px; background: rgba(255,255,255,0.5); padding: 2px 8px; border-radius: 10px;">📅 {data_formatada}</span>
+                    </div>
+                    <div style="font-size: 18px; margin-top: 5px;">MOTIVO: {row[col_motivo]} | OBS: {row[col_obs]}</div>
                 </div>
             """, unsafe_allow_html=True)
 
-        # Painel de Edição (Seu layout original)
+        # Painel de Edição
         st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)
-        st.markdown("### ⚙️ Painel de Edição")
+        st.markdown("### ⚙️ Painel de Edição (Últimos 3 dias)")
+        
         df_editado = st.data_editor(
-            df_hoje[["Aprovação", col_quem, col_motivo, col_obs]],
+            df_visualizacao[["Aprovação", col_quem, col_motivo, col_obs]],
             use_container_width=True, 
             hide_index=True,
             column_config={
@@ -393,23 +411,25 @@ def gerenciar_oracao():
 
         if st.button("💾 SALVAR PEDIDOS DE ORAÇÃO", use_container_width=True):
             with st.spinner("Sincronizando..."):
-                # --- CORREÇÃO AQUI ---
-                # 1. Atualizamos o df_original APENAS nas linhas de hoje
-                df_original.loc[mask_hoje, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
-                df_original.loc[mask_hoje, col_quem] = df_editado[col_quem].values
-                df_original.loc[mask_hoje, col_motivo] = df_editado[col_motivo].values
-                df_original.loc[mask_hoje, col_obs] = df_editado[col_obs].values
                 
-                # 2. Preparamos uma cópia para salvar sem estragar o histórico
+                # ### ALTERAÇÃO AQUI: SALVAMENTO SEGURO COM ÍNDICE ###
+                # Usamos o índice (IDs das linhas) do df_visualizacao para atualizar o original
+                # Isso garante que atualizamos as linhas certas, independente da data
+                indices_para_atualizar = df_visualizacao.index
+                
+                df_original.loc[indices_para_atualizar, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
+                df_original.loc[indices_para_atualizar, col_quem] = df_editado[col_quem].values
+                df_original.loc[indices_para_atualizar, col_motivo] = df_editado[col_motivo].values
+                df_original.loc[indices_para_atualizar, col_obs] = df_editado[col_obs].values
+                
+                # --- PROCESSO DE SEGURANÇA MANTIDO ---
                 df_para_salvar = df_original.copy()
                 
-                # 3. Tratamos a data para string e removemos os NaNs (O que impedia de salvar)
+                # Formata data e limpa NaNs
                 df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S').fillna("")
-                df_para_salvar = df_para_salvar.fillna("") # Garante que nada esteja "nulo"
+                df_para_salvar = df_para_salvar.fillna("") 
                 
-                # 4. Atualização completa da planilha
                 aba.clear()
-                # Garantimos que a lista de listas tenha os cabeçalhos e os dados tratados
                 corpo_dados = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
                 aba.update(corpo_dados)
                 
@@ -687,7 +707,7 @@ def mostrar_apresentacao():
                 renderizar_cartao(f"<b>👤 {r.iloc[1]} ({r.iloc[2]})</b><br>MOTIVO: {r.iloc[3]} | {r.iloc[4]}")
             st.markdown("<br><br>", unsafe_allow_html=True)
 
-# --- SETOR 2: PROGRAMAÇÃO (ALTERADO PARA EXIBIR SEMPRE OS PRÓXIMOS 7 DIAS) ---
+# --- SETOR 2: PROGRAMAÇÃO ---
         df_prog = pd.DataFrame(sh.worksheet("cadastro_agenda_semanal").get_all_records())
         if not df_prog.empty:
             col_ev = df_prog.columns[1] # Coluna B
@@ -748,14 +768,32 @@ def mostrar_apresentacao():
             """, unsafe_allow_html=True)
             st.markdown("<br><br>", unsafe_allow_html=True)
 
-        # --- SETOR 6: ORAÇÃO ---
-        df_ora = carregar_dados_seguro("cadastro_oracao")
-        if not df_ora.empty:
-            st.markdown("<h3 style='text-align: center;'>🙏 """ + '""COM A IGREJA EM PÉ""' + """</h3>""", unsafe_allow_html=True)
-            st.info("TEMOS ALGUNS PEDIDOS DE ORAÇÃO")
-            for _, r in df_ora.iterrows():
-                renderizar_cartao(f"<b>🙏 PARA: {r.iloc[1]}</b><br>MOTIVO: {r.iloc[2]} | OBS: {r.iloc[3]}")
-            st.markdown("<p style='text-align: center; font-weight: bold; font-size: 19px;'>PARA ORAR POR ESTES PEDIDOS VOU CHAMAR O...</p>", unsafe_allow_html=True)
+# --- SETOR 6: ORAÇÃO (AJUSTADO PARA HOJE E 2 DIAS ANTES) ---
+        # Carregamos sem o filtro automático de 'hoje' da função para aplicar o novo intervalo
+        df_ora_bruto = carregar_dados_seguro("cadastro_oracao", filtrar_hoje=False)
+        
+        if not df_ora_bruto.empty:
+            # Define o intervalo: de (hoje - 2 dias) até (hoje)
+            data_limite_passado = hoje - timedelta(days=2)
+            
+            # Filtra: Data entre o limite passado e hoje + Apenas os Aprovados
+            df_ora = df_ora_bruto[
+                (df_ora_bruto[df_ora_bruto.columns[0]] >= data_limite_passado) & 
+                (df_ora_bruto[df_ora_bruto.columns[0]] <= hoje)
+            ]
+            
+            # O filtro de aprovação já é tratado dentro da carregar_dados_seguro, 
+            # mas reforçamos aqui se necessário.
+            
+            if not df_ora.empty:
+                st.markdown("<h3 style='text-align: center;'>🙏 " + '""COM A IGREJA EM PÉ""' + "</h3>", unsafe_allow_html=True)
+                st.info("TEMOS ALGUNS PEDIDOS DE ORAÇÃO")
+                
+                # Ordena para mostrar os mais recentes primeiro
+                for _, r in df_ora.sort_values(by=df_ora.columns[0], ascending=False).iterrows():
+                    renderizar_cartao(f"<b>🙏 PARA: {r.iloc[1]}</b><br>MOTIVO: {r.iloc[2]} | OBS: {r.iloc[3]}")
+                
+                st.markdown("<p style='text-align: center; font-weight: bold; font-size: 19px;'>PARA ORAR POR ESTES PEDIDOS VOU CHAMAR O...</p>", unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"Erro ao carregar roteiro de Apresentação: {e}")
