@@ -141,7 +141,7 @@ import time
 
 def gerenciar_visitantes():
     st.title("🫂 Visitantes de Hoje")
-    st.link_button("➕ Novo Visitante", "https://docs.google.com/forms/d/...", use_container_width=True)
+    st.link_button("➕ Novo Visitante", "https://docs.google.com/forms/d/e/1FAIpQLScuFOyVP1p0apBrBc0yuOak2AnznpbVemts5JIDe0bawIQIqw/viewform?usp=header", use_container_width=True)
     st.markdown("---")
 
     try:
@@ -687,30 +687,32 @@ def mostrar_apresentacao():
                 renderizar_cartao(f"<b>👤 {r.iloc[1]} ({r.iloc[2]})</b><br>MOTIVO: {r.iloc[3]} | {r.iloc[4]}")
             st.markdown("<br><br>", unsafe_allow_html=True)
 
-        # --- SETOR 2: PROGRAMAÇÃO (SÓ DOMINGO) ---
-        if hoje.weekday() == 6: # 6 é Domingo
-            df_prog = pd.DataFrame(sh.worksheet("cadastro_agenda_semanal").get_all_records())
-            if not df_prog.empty:
-                col_ev = df_prog.columns[1] # Coluna B
-                df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
+# --- SETOR 2: PROGRAMAÇÃO (ALTERADO PARA EXIBIR SEMPRE OS PRÓXIMOS 7 DIAS) ---
+        df_prog = pd.DataFrame(sh.worksheet("cadastro_agenda_semanal").get_all_records())
+        if not df_prog.empty:
+            col_ev = df_prog.columns[1] # Coluna B
+            df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
+            
+            # Define o intervalo: de hoje até hoje + 7 dias
+            ini = hoje
+            fim = hoje + timedelta(days=7)
+            
+            # Filtra os dados dentro do intervalo e que estão aprovados
+            df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)]
+            
+            if "Aprovação" in df_p.columns:
+                df_p = df_p[~df_p["Aprovação"].astype(str).isin(['0', 'False', 'FALSO'])]
+            
+            if not df_p.empty:
+                st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
+                dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
                 
-                # Próxima Semana
-                dias_seg = (0 - hoje.weekday() + 7) % 7
-                if dias_seg == 0: dias_seg = 7
-                ini, fim = hoje + timedelta(days=dias_seg), hoje + timedelta(days=dias_seg+6)
-                
-                df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)]
-                if "Aprovação" in df_p.columns:
-                    df_p = df_p[~df_p["Aprovação"].astype(str).isin(['0', 'False', 'FALSO'])]
-                
-                if not df_p.empty:
-                    st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
-                    dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
-                    for data_dia, grupo in df_p.sort_values(by=col_ev).groupby(df_p[col_ev].dt.date):
-                        st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
-                        for _, r in grupo.iterrows():
-                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {r[col_ev].strftime("%H:%M")}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
-                    st.markdown("<br><br>", unsafe_allow_html=True)
+                # Ordena por data e hora para a leitura ficar lógica
+                for data_dia, grupo in df_p.sort_values(by=col_ev).groupby(df_p[col_ev].dt.date):
+                    st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
+                    for _, r in grupo.iterrows():
+                        st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {r[col_ev].strftime("%H:%M")}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
+                st.markdown("<br><br>", unsafe_allow_html=True)
 
         # --- SETOR 3: RECADOS ---
         df_rec = carregar_dados_seguro("cadastro_recados")
