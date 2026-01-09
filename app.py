@@ -12,6 +12,45 @@ def obter_hoje_brasil():
     fuso = pytz.timezone('America/Sao_Paulo')
     return datetime.now(fuso).date()
 
+from googleapiclient.discovery import build # Necessário instalar: pip install google-api-python-client
+
+def obter_eventos_calendario():
+    try:
+        # Reutiliza as credenciais da sua função conectar()
+        # Nota: Certifique-se que o escopo 'https://www.googleapis.com/auth/calendar.readonly' esteja ativo
+        sh = conectar() 
+        credentials = sh.auth.service_account_creds
+        service = build('calendar', 'v3', credentials=credentials)
+
+        hoje = obter_hoje_brasil()
+        agora = datetime.combine(hoje, datetime.min.time()).isoformat() + 'Z'
+        limite = datetime.combine(hoje + timedelta(days=7), datetime.max.time()).isoformat() + 'Z'
+
+        # Busca os eventos (ID 'primary' ou o e-mail da agenda específica)
+        events_result = service.events().list(
+            calendarId='primary', timeMin=agora, timeMax=limite,
+            singleEvents=True, orderBy='startTime'
+        ).execute()
+        
+        eventos = events_result.get('items', [])
+        
+        dados_formatados = []
+        for ev in eventos:
+            start = ev['start'].get('dateTime', ev['start'].get('date'))
+            # Remove o fuso horário para o pandas entender
+            start_dt = pd.to_datetime(start).replace(tzinfo=None)
+            
+            dados_formatados.append({
+                "Data": start_dt,
+                "Evento": ev.get('summary', '(Sem Título)'),
+                "Aprovação": True  # Valor padrão inicial
+            })
+            
+        return pd.DataFrame(dados_formatados)
+    except Exception as e:
+        st.error(f"Erro ao acessar Calendário: {e}")
+        return pd.DataFrame()
+
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Átrio - Recepção", layout="wide")
 
@@ -324,6 +363,8 @@ def gerenciar_ausencia():
     except Exception as e:
         st.error(f"Erro Crítico: {e}")
 
+# --- MÓDULO DE PEDIDO DE ORAÇÕES ---
+
 import pandas as pd
 import streamlit as st
 import time
@@ -531,61 +572,48 @@ def gerenciar_parabenizacao():
     except Exception as e:
         st.error(f"Erro ao carregar aba 'cadastro_parabenizacao': {e}")
 
+
+
 # --- MÓDULO DE PROGRAMAÇÃO ---
 
-import pandas as pd
-import streamlit as st
-import time
-
 def gerenciar_programacao():
-    st.title("🗓️ Programação da Próxima Semana")
-    st.link_button("➕ Novo Evento", "https://docs.google.com/forms/d/e/1FAIpQLSc0kUREvy7XDG20tuG55XnaThdZ-nDm5eYp8pdM7M3YKJCPoQ/viewform", use_container_width=True)
+    st.title("🗓️ Agenda da Igreja") # Alterado conforme solicitado
+    # Botão de link agora aponta para a Agenda (ou mantém o formulário se preferir)
+    st.link_button("📅 Ver no Google Agenda", "https://calendar.google.com/", use_container_width=True)
     st.markdown("---")
 
     try:
-        sh = conectar()
-        aba = sh.worksheet("cadastro_agenda_semanal")
-        dados = aba.get_all_records()
-        if not dados: return
+        # --- ENTRADA DE DADOS VIA CALENDÁRIO ---
+        df_original = obter_eventos_calendario()
         
-        df_original = pd.DataFrame(dados)
+        if df_original.empty:
+            st.info("📅 Nenhum evento encontrado no Google Agenda para os próximos 7 dias.")
+            return
         
-        # 1. TRATAMENTO DA DATA DO EVENTO (Coluna B)
-        col_evento_data = df_original.columns[1] # Coluna B
-        df_original[col_evento_data] = pd.to_datetime(df_original[col_evento_data], dayfirst=True, errors='coerce')
+        # 1. DEFINIÇÃO DE COLUNAS (Padronizando com sua lógica)
+        col_evento_data = "Data"
+        col_evento_nome = "Evento"
 
-        # 2. CÁLCULO DO INTERVALO (Próxima Segunda a Domingo)
+        # 2. CÁLCULO DO INTERVALO (Sempre 7 dias à frente)
         hoje = obter_hoje_brasil()
-        # Dias que faltam para a próxima segunda (0=Segunda, 6=Domingo)
-        dias_para_segunda = (0 - hoje.weekday() + 7) % 7
-        if dias_para_segunda == 0: dias_para_segunda = 7 # Se hoje é segunda, pula para a próxima
-        
-        inicio_semana = hoje + timedelta(days=dias_para_segunda)
-        fim_semana = inicio_semana + timedelta(days=6)
+        fim_periodo = hoje + timedelta(days=7)
 
-        # 3. FILTRAGEM
+        # 3. FILTRAGEM (Garantindo o range de 7 dias)
         df_semana = df_original[
-            (df_original[col_evento_data].dt.date >= inicio_semana) & 
-            (df_original[col_evento_data].dt.date <= fim_semana)
+            (df_original[col_evento_data].dt.date >= hoje) & 
+            (df_original[col_evento_data].dt.date <= fim_periodo)
         ].copy()
         
         # Ordenar por data e hora
         df_semana = df_semana.sort_values(by=col_evento_data)
 
-        if df_semana.empty:
-            st.info(f"📅 Sem eventos programados para a semana de {inicio_semana.strftime('%d/%m')} a {fim_semana.strftime('%d/%m')}.")
-            return
-
-        # Lógica de Aprovação
+        # Lógica de Aprovação (Aqui você pode cruzar com o Sheets se quiser persistir a aprovação)
+        # Por padrão, vamos considerar que o que está no Calendário está Ativo
         if "Aprovação" not in df_semana.columns:
             df_semana["Aprovação"] = True
-        else:
-            df_semana["Aprovação"] = df_semana["Aprovação"].apply(lambda x: False if str(x) in ['0', 'False', 'FALSO'] else True)
-
-        col_evento_nome = df_semana.columns[2] # Coluna C
 
         # --- EXIBIÇÃO AGRUPADA POR DIA ---
-        st.write(f"📅 Exibindo: **{inicio_semana.strftime('%d/%m')}** até **{fim_semana.strftime('%d/%m')}**")
+        st.write(f"📅 Programação de **{hoje.strftime('%d/%m')}** até **{fim_periodo.strftime('%d/%m')}**")
         
         dias_semana_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
 
@@ -594,6 +622,7 @@ def gerenciar_programacao():
             st.subheader(f"{nome_dia} ({data_dia.strftime('%d/%m')})")
             
             for i, row in grupo.iterrows():
+                # Cor baseada na Aprovação: Verde se True, Vermelho se False
                 cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
                 hora_str = row[col_evento_data].strftime('%H:%M')
                 
@@ -603,12 +632,11 @@ def gerenciar_programacao():
                     </div>
                 """, unsafe_allow_html=True)
 
-        # Painel de Edição
+        # Painel de Edição (Permite desativar visualmente antes de salvar no Sheets de Cache/Controle)
         st.markdown("---")
         st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)        
-        st.markdown("### ⚙️ Painel de Edição da Semana")
+        st.markdown("### ⚙️ Controle de Exibição")
         
-        # Criamos uma coluna formatada para o editor mostrar data/hora legível
         df_semana["Horário"] = df_semana[col_evento_data].dt.strftime('%d/%m %H:%M')
         
         df_editado = st.data_editor(
@@ -616,47 +644,32 @@ def gerenciar_programacao():
             use_container_width=True, 
             hide_index=True,
             column_config={
-                "Aprovação": st.column_config.CheckboxColumn("ATIVO", width="small"),
+                "Aprovação": st.column_config.CheckboxColumn("EXIBIR NO TELÃO", width="small"),
                 "Horário": st.column_config.TextColumn("Data/Hora", disabled=True),
-                col_evento_nome: "Evento"
+                col_evento_nome: "Evento (Vindo do Google)"
             },
-            key="ed_agenda"
+            key="ed_agenda_cal"
         )
 
-        if st.button("💾 SALVAR PROGRAMAÇÃO", use_container_width=True):
-            with st.spinner("Sincronizando com o Átrio..."):
-                # 1. Sincroniza as edições do editor de volta para o DataFrame original
-                # Usamos o índice original para garantir que a linha certa seja atualizada
-                df_original.loc[df_semana.index, "Aprovação"] = df_editado["Aprovação"].apply(lambda x: 1 if x else 0)
-                df_original.loc[df_semana.index, col_evento_nome] = df_editado[col_evento_nome]
+        if st.button("💾 CONFIRMAR PROGRAMAÇÃO", use_container_width=True):
+            with st.spinner("Sincronizando com o Sistema Átrio..."):
+                # Aqui você pode salvar essa lista editada em uma aba de "Cache" 
+                # no Sheets para que a "Tela de Apresentação" use esses dados aprovados.
+                sh = conectar()
+                aba = sh.worksheet("cadastro_agenda_semanal")
                 
-                # 2. PREPARAÇÃO DOS DADOS PARA O SHEETS
-                # Criamos uma cópia para não afetar a exibição atual do Streamlit
-                df_para_salvar = df_original.copy()
-                
-                # Tratamento crucial: converter Timestamps para String e preencher Nulos
-                # O Google Sheets não aceita objetos de data do Python via API de forma direta em listas
-                for col in df_para_salvar.columns:
-                    if pd.api.types.is_datetime64_any_dtype(df_para_salvar[col]):
-                        df_para_salvar[col] = df_para_salvar[col].dt.strftime('%d/%m/%Y %H:%M:%S')
-                
-                # Substitui NaN (valores vazios) por string vazia para evitar erro de JSON
-                df_para_salvar = df_para_salvar.fillna("")
-                
-                # 3. ATUALIZAÇÃO SEGURA (Sem aba.clear())
-                # Transformamos o DF em uma lista de listas (incluindo o cabeçalho)
+                df_para_salvar = df_editado.copy()
+                # Tratamento para salvar no Sheets
                 lista_para_salvar = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
-                
-                # Atualizamos a partir da célula A1. 
-                # Isso sobrescreve os dados existentes sem apagar a planilha toda primeiro.
                 aba.update("A1", lista_para_salvar)
                 
-                st.success("✅ Agenda atualizada com sucesso!")
-                time.sleep(1)
-                st.rerun()
-    
+                st.success("✅ Programação confirmada para o telão!")
+                time.sleep(1); st.rerun()
+
     except Exception as e:
-        st.error(f"Erro na Programação: {e}")
+        st.error(f"Erro na Integração com Calendário: {e}")
+  
+
   
 # --- TELA DE APRESENTAÇÃO (RESUMO FINAL PARA LEITURA) ---
 
