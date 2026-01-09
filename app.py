@@ -85,14 +85,40 @@ if not st.session_state["logado"]:
     tela_login()
     st.stop()
 
-# --- 4. CONEXÃO COM GOOGLE SHEETS ---
+
+
+# --- 4. CONEXÃO COM GOOGLE SHEETS E CALENDAR ---
 @st.cache_resource
 def conectar():
-    cred = json.loads(st.secrets["gcp_service_account"]["credenciais_json"])
-    cred['private_key'] = cred['private_key'].replace("\\n", "\n")
-    gc = gspread.service_account_from_dict(cred)
-    # Sua Planilha Mestra
+    import gspread
+    from google.oauth2.service_account import Credentials
+    import json
+
+    # 1. DEFINIR OS ESCOPOS (Acesso a Sheets, Drive e Calendário)
+    SCOPES = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/calendar.readonly"
+    ]
+
+    # 2. CARREGAR OS DADOS DO SECRETS
+    # Pegamos a string JSON que está no seu st.secrets e transformamos em dicionário
+    cred_info = json.loads(st.secrets["gcp_service_account"]["credenciais_json"])
+    
+    # Tratamento da chave privada (o replace que você já usava)
+    cred_info['private_key'] = cred_info['private_key'].replace("\\n", "\n")
+
+    # 3. CRIAR AS CREDENCIAIS COM OS ESCOPOS CORRETOS
+    # Aqui é onde o "visto" para o Calendário é inserido
+    credentials = Credentials.from_service_account_info(cred_info, scopes=SCOPES)
+    
+    # 4. AUTORIZAR O CLIENTE GSPREAD
+    gc = gspread.authorize(credentials)
+    
+    # 5. RETORNAR A PLANILHA MESTRA PELO ID
     return gc.open_by_key("16zFy51tlxGmS-HQklP9_Ath4ZCv-s7Cmd38ayAhGZ_I")
+
+
 
 # --- 5. MENU LATERAL ---
 with st.sidebar:
