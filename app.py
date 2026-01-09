@@ -768,32 +768,40 @@ def mostrar_apresentacao():
             """, unsafe_allow_html=True)
             st.markdown("<br><br>", unsafe_allow_html=True)
 
-# --- SETOR 6: ORAÇÃO (AJUSTADO PARA HOJE E 2 DIAS ANTES) ---
-        # Carregamos sem o filtro automático de 'hoje' da função para aplicar o novo intervalo
+# --- SETOR 6: ORAÇÃO (AJUSTADO PARA HOJE E 2 DIAS ANTES + NOME DO PRELETOR) ---
         df_ora_bruto = carregar_dados_seguro("cadastro_oracao", filtrar_hoje=False)
         
         if not df_ora_bruto.empty:
-            # Define o intervalo: de (hoje - 2 dias) até (hoje)
             data_limite_passado = hoje - timedelta(days=2)
-            
-            # Filtra: Data entre o limite passado e hoje + Apenas os Aprovados
             df_ora = df_ora_bruto[
                 (df_ora_bruto[df_ora_bruto.columns[0]] >= data_limite_passado) & 
                 (df_ora_bruto[df_ora_bruto.columns[0]] <= hoje)
             ]
             
-            # O filtro de aprovação já é tratado dentro da carregar_dados_seguro, 
-            # mas reforçamos aqui se necessário.
-            
             if not df_ora.empty:
                 st.markdown("<h3 style='text-align: center;'>🙏 " + '""COM A IGREJA EM PÉ""' + "</h3>", unsafe_allow_html=True)
                 st.info("TEMOS ALGUNS PEDIDOS DE ORAÇÃO")
                 
-                # Ordena para mostrar os mais recentes primeiro
                 for _, r in df_ora.sort_values(by=df_ora.columns[0], ascending=False).iterrows():
                     renderizar_cartao(f"<b>🙏 PARA: {r.iloc[1]}</b><br>MOTIVO: {r.iloc[2]} | OBS: {r.iloc[3]}")
                 
                 st.markdown("<p style='text-align: center; font-weight: bold; font-size: 19px;'>PARA ORAR POR ESTES PEDIDOS VOU CHAMAR O...</p>", unsafe_allow_html=True)
+
+                # --- LÓGICA DO NOME DO PRELETOR (LIMPA AO MUDAR O DIA) ---
+                if 'data_ultimo_acesso' not in st.session_state or st.session_state.data_ultimo_acesso != hoje:
+                    st.session_state.data_ultimo_acesso = hoje
+                    st.session_state.nome_oracao = ""
+
+                nome_preletor = st.text_input("Digite o nome de quem fará a oração:", key="nome_oracao", help="Este nome será apagado automaticamente amanhã.")
+
+                if nome_preletor:
+                    st.markdown(f"""
+                        <div style="text-align: center; margin-top: 10px;">
+                            <h2 style="color: #d32f2f; font-weight: bold; font-size: 32px; text-transform: uppercase;">
+                                {nome_preletor}
+                            </h2>
+                        </div>
+                    """, unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"Erro ao carregar roteiro de Apresentação: {e}")
