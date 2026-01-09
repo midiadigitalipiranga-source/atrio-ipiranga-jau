@@ -636,97 +636,66 @@ def obter_eventos_calendario():
         st.error(f"Erro ao acessar a agenda 'Cultos': {e}")
         return pd.DataFrame()
 
-# --- MÓDULO PRINCIPAL DE PROGRAMAÇÃO ---
-def gerenciar_programacao():
-    st.title("🗓️ Agenda da Igreja")
-    st.link_button("📅 Abrir Google Agenda", "https://calendar.google.com/", use_container_width=True)
-    st.markdown("---")
 
+
+# --- MÓDULO DE PROGRAMAÇÃO ---
+
+def obter_eventos_calendario():
     try:
-        # Busca os dados em tempo real do Calendário
-        df_original = obter_eventos_calendario()
+        # Chama sua função de conexão existente (que retorna a planilha)
+        sh = conectar() 
         
-        if df_original.empty:
-            st.info("📅 Nenhum evento encontrado na agenda 'Cultos' para os próximos 7 dias.")
-            return
+        # --- CORREÇÃO AQUI ---
+        # A planilha (sh) não tem o atributo 'auth', mas o 'client' que a abriu tem.
+        credentials = sh.client.auth 
         
-        col_evento_data = "Data"
-        col_evento_nome = "Evento"
+        # Constrói o serviço do Google Calendar usando as credenciais do gspread
+        service = build('calendar', 'v3', credentials=credentials)
+
+        # 1. LOCALIZAR O ID DA AGENDA "CULTOS"
+        calendar_list = service.calendarList().list().execute()
+        calendars = calendar_list.get('items', [])
+        
+        calendar_id = None
+        for cal in calendars:
+            if cal.get('summary') == "Cultos":
+                calendar_id = cal.get('id')
+                break
+        
+        # Fallback para o e-mail principal caso a agenda "Cultos" não seja encontrada
+        if not calendar_id:
+            calendar_id = "midia.digital.ipiranga@gmail.com"
 
         hoje = obter_hoje_brasil()
-        fim_periodo = hoje + timedelta(days=7)
+        agora = datetime.combine(hoje, datetime.min.time()).isoformat() + 'Z'
+        limite = datetime.combine(hoje + timedelta(days=7), datetime.max.time()).isoformat() + 'Z'
 
-        # Garantimos a filtragem correta no DataFrame
-        df_semana = df_original[
-            (df_original[col_evento_data].dt.date >= hoje) & 
-            (df_original[col_evento_data].dt.date <= fim_periodo)
-        ].copy()
+        # 2. BUSCAR EVENTOS NA AGENDA ESPECÍFICA
+        events_result = service.events().list(
+            calendarId=calendar_id, 
+            timeMin=agora, 
+            timeMax=limite,
+            singleEvents=True, 
+            orderBy='startTime'
+        ).execute()
         
-        df_semana = df_semana.sort_values(by=col_evento_data)
-
-        # --- EXIBIÇÃO DOS CARTÕES COLORIDOS ---
-        st.write(f"📅 Exibindo eventos de: **{hoje.strftime('%d/%m')}** até **{fim_periodo.strftime('%d/%m')}**")
+        eventos = events_result.get('items', [])
         
-        dias_semana_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
-
-        for data_dia, grupo in df_semana.groupby(df_semana[col_evento_data].dt.date):
-            nome_dia = dias_semana_pt[data_dia.weekday()]
-            st.subheader(f"{nome_dia} ({data_dia.strftime('%d/%m')})")
+        dados_formatados = []
+        for ev in eventos:
+            start = ev['start'].get('dateTime', ev['start'].get('date'))
+            start_dt = pd.to_datetime(start).replace(tzinfo=None)
             
-            for i, row in grupo.iterrows():
-                # Lógica de cor preservada: Verde para Ativo, Laranja/Vermelho para Inativo
-                cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
-                hora_str = row[col_evento_data].strftime('%H:%M')
-                
-                st.markdown(f"""
-                    <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 8px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
-                        <div style="font-size: 18px; font-weight: bold;">⏰ {hora_str} - {row[col_evento_nome]}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-        # --- PAINEL DE EDIÇÃO ---
-        st.markdown("---")
-        st.markdown('<div style="margin-top: 50px;"></div>', unsafe_allow_html=True)        
-        st.markdown("### ⚙️ Controle de Exibição (Telão)")
-        
-        # Prepara coluna de horário legível para o editor
-        df_semana["Horário"] = df_semana[col_evento_data].dt.strftime('%d/%m %H:%M')
-        
-        df_editado = st.data_editor(
-            df_semana[["Aprovação", "Horário", col_evento_nome]],
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Aprovação": st.column_config.CheckboxColumn("EXIBIR", width="small"),
-                "Horário": st.column_config.TextColumn("Data/Hora", disabled=True),
-                col_evento_nome: "Evento vindo do Google"
-            },
-            key="ed_agenda_final"
-        )
-
-        # --- SALVAMENTO SEGURO ---
-        if st.button("💾 CONFIRMAR E SALVAR PROGRAMAÇÃO", use_container_width=True):
-            with st.spinner("Sincronizando com o Átrio..."):
-                sh = conectar()
-                aba = sh.worksheet("cadastro_agenda_semanal")
-                
-                # Preparamos os dados exatamente como o Sheets espera
-                df_para_salvar = df_editado.copy()
-                
-                # Garantimos que nulos não quebrem o envio
-                df_para_salvar = df_para_salvar.fillna("")
-                
-                # Transformamos em lista com cabeçalho
-                corpo_dados = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
-                
-                # Atualização sem Clear para evitar perda de dados momentânea
-                aba.update("A1", corpo_dados)
-                
-                st.success("✅ Programação salva com sucesso para a Tela de Apresentação!")
-                time.sleep(1); st.rerun()
-
+            dados_formatados.append({
+                "Data": start_dt,
+                "Evento": ev.get('summary', '(Sem Título)'),
+                "Aprovação": True
+            })
+            
+        return pd.DataFrame(dados_formatados)
     except Exception as e:
-        st.error(f"Erro no Módulo de Programação: {e}")
+        st.error(f"Erro ao acessar a agenda 'Cultos': {e}")
+        return pd.DataFrame()
   
 
   
