@@ -640,16 +640,22 @@ def obter_eventos_calendario():
 
 # --- MÓDULO DE PROGRAMAÇÃO ---
 
+import pandas as pd
+import streamlit as st
+import time
+from datetime import datetime, timedelta
+from googleapiclient.discovery import build
+
+# --- FUNÇÃO DE BUSCA: AGORA COM A CONEXÃO CORRIGIDA ---
 def obter_eventos_calendario():
     try:
-        # Chama sua função de conexão existente (que retorna a planilha)
+        # sh é o objeto da Planilha retornado pelo seu conectar()
         sh = conectar() 
         
-        # --- CORREÇÃO AQUI ---
-        # A planilha (sh) não tem o atributo 'auth', mas o 'client' que a abriu tem.
+        # AJUSTE AQUI: Acessamos o cliente (client) para pegar as credenciais (auth)
+        # Isso resolve o erro de "'Spreadsheet' object has no attribute 'auth'"
         credentials = sh.client.auth 
         
-        # Constrói o serviço do Google Calendar usando as credenciais do gspread
         service = build('calendar', 'v3', credentials=credentials)
 
         # 1. LOCALIZAR O ID DA AGENDA "CULTOS"
@@ -662,7 +668,7 @@ def obter_eventos_calendario():
                 calendar_id = cal.get('id')
                 break
         
-        # Fallback para o e-mail principal caso a agenda "Cultos" não seja encontrada
+        # Fallback para o e-mail principal caso a agenda não seja encontrada
         if not calendar_id:
             calendar_id = "midia.digital.ipiranga@gmail.com"
 
@@ -670,7 +676,7 @@ def obter_eventos_calendario():
         agora = datetime.combine(hoje, datetime.min.time()).isoformat() + 'Z'
         limite = datetime.combine(hoje + timedelta(days=7), datetime.max.time()).isoformat() + 'Z'
 
-        # 2. BUSCAR EVENTOS NA AGENDA ESPECÍFICA
+        # 2. BUSCAR EVENTOS
         events_result = service.events().list(
             calendarId=calendar_id, 
             timeMin=agora, 
@@ -689,13 +695,98 @@ def obter_eventos_calendario():
             dados_formatados.append({
                 "Data": start_dt,
                 "Evento": ev.get('summary', '(Sem Título)'),
-                "Aprovação": True
+                "Aprovação": True # Padrão inicial verde
             })
             
         return pd.DataFrame(dados_formatados)
     except Exception as e:
         st.error(f"Erro ao acessar a agenda 'Cultos': {e}")
         return pd.DataFrame()
+
+# --- MÓDULO PRINCIPAL DE PROGRAMAÇÃO ---
+def gerenciar_programacao():
+    st.title("🗓️ Agenda da Igreja")
+    st.link_button("📅 Abrir Google Agenda", "https://calendar.google.com/", use_container_width=True)
+    st.markdown("---")
+
+    try:
+        # Busca os dados corrigidos
+        df_original = obter_eventos_calendario()
+        
+        if df_original.empty:
+            st.info("📅 Nenhum evento encontrado na agenda 'Cultos' para os próximos 7 dias.")
+            return
+        
+        col_evento_data = "Data"
+        col_evento_nome = "Evento"
+
+        hoje = obter_hoje_brasil()
+        fim_periodo = hoje + timedelta(days=7)
+
+        df_semana = df_original[
+            (df_original[col_evento_data].dt.date >= hoje) & 
+            (df_original[col_evento_data].dt.date <= fim_periodo)
+        ].copy()
+        
+        df_semana = df_semana.sort_values(by=col_evento_data)
+
+        # --- EXIBIÇÃO DOS CARTÕES COLORIDOS ---
+        st.write(f"📅 Exibindo eventos de: **{hoje.strftime('%d/%m')}** até **{fim_periodo.strftime('%d/%m')}**")
+        
+        dias_semana_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+
+        for data_dia, grupo in df_semana.groupby(df_semana[col_evento_data].dt.date):
+            nome_dia = dias_semana_pt[data_dia.weekday()]
+            st.subheader(f"{nome_dia} ({data_dia.strftime('%d/%m')})")
+            
+            for i, row in grupo.iterrows():
+                cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
+                hora_str = row[col_evento_data].strftime('%H:%M')
+                
+                st.markdown(f"""
+                    <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 8px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
+                        <div style="font-size: 18px; font-weight: bold;">⏰ {hora_str} - {row[col_evento_nome]}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        # --- PAINEL DE EDIÇÃO ---
+        st.markdown("---")
+        st.markdown('<div style="margin-top: 50px;"></div>', unsafe_allow_html=True)        
+        st.markdown("### ⚙️ Controle de Exibição (Telão)")
+        
+        df_semana["Horário"] = df_semana[col_evento_data].dt.strftime('%d/%m %H:%M')
+        
+        df_editado = st.data_editor(
+            df_semana[["Aprovação", "Horário", col_evento_nome]],
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Aprovação": st.column_config.CheckboxColumn("EXIBIR", width="small"),
+                "Horário": st.column_config.TextColumn("Data/Hora", disabled=True),
+                col_evento_nome: "Evento vindo do Google"
+            },
+            key="ed_agenda_final"
+        )
+
+        # --- SALVAMENTO SEGURO ---
+        if st.button("💾 CONFIRMAR E SALVAR PROGRAMAÇÃO", use_container_width=True):
+            with st.spinner("Sincronizando com o Átrio..."):
+                sh = conectar()
+                aba = sh.worksheet("cadastro_agenda_semanal")
+                
+                df_para_salvar = df_editado.copy()
+                df_para_salvar = df_para_salvar.fillna("")
+                
+                corpo_dados = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
+                
+                # Atualização segura via gspread
+                aba.update("A1", corpo_dados)
+                
+                st.success("✅ Programação salva com sucesso!")
+                time.sleep(1); st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro no Módulo de Programação: {e}")
   
 
   
