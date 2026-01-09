@@ -7,6 +7,11 @@ from datetime import datetime, timedelta
 import time
 import pytz
 
+# --- NOVOS IMPORTS NECESSÁRIOS ---
+from google.oauth2.service_account import Credentials  # Para lidar com os SCOPES de acesso
+from googleapiclient.discovery import build            # Para conectar no Google Calendar
+
+
 # --- FUNÇÃO AUXILIAR PARA OBTER DATA BRASIL ---
 def obter_hoje_brasil():
     fuso = pytz.timezone('America/Sao_Paulo')
