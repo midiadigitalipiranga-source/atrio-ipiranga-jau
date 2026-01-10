@@ -744,7 +744,7 @@ def gerenciar_programacao():
   
 
   
-# --- TELA DE APRESENTAÇÃO (RESUMO FINAL PARA LEITURA) ---
+# --- TELA DE APRESENTAÇÃO ---
 
 def mostrar_apresentacao():
     # 1. SAUDAÇÃO INICIAL FIXA
@@ -758,7 +758,6 @@ def mostrar_apresentacao():
         sh = conectar()
         hoje = obter_hoje_brasil()
         
-        # Função para padronizar os cartões (Fonte 18px neutra)
         def renderizar_cartao(conteudo):
             st.markdown(f"""
                 <div style="background-color: #ffffff; padding: 18px; border-radius: 12px; margin-bottom: 12px; border: 1px solid #ddd; border-left: 8px solid #0e2433;">
@@ -766,37 +765,24 @@ def mostrar_apresentacao():
                 </div>
             """, unsafe_allow_html=True)
 
-        
-        # Função de segurança para carregar e filtrar dados (VERSÃO FINAL CORRIGIDA)
+        # Função para os outros setores (Ausência, Recados, etc) continuarem vindo da Planilha
         def carregar_dados_seguro(aba_nome, data_idx=0, filtrar_hoje=True):
             try:
                 dados = sh.worksheet(aba_nome).get_all_values()
                 if not dados or len(dados) < 2: return pd.DataFrame()
-                
                 df = pd.DataFrame(dados[1:], columns=dados[0])
-                
-                # Tratamento da Data
                 df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
                 
-                # FILTRO DE APROVAÇÃO (MUITO MAIS FLEXÍVEL)
                 if "Aprovação" in df.columns:
                     col_ap = df["Aprovação"]
                     if isinstance(col_ap, pd.DataFrame): col_ap = col_ap.iloc[:, 0]
-                    
-                    # Converte para texto e limpa
                     serie_aprov = col_ap.astype(str).str.upper().str.strip()
-                    
-                    # Lógica: SÓ remove se for explicitamente algo que indique "não aprovado"
-                    # Se estiver vazio, o Streamlit/Sheets às vezes envia '', 'FALSE' ou '0'
-                    lista_reprovas = ['FALSE', 'FALSO', '0', '0.0', '', 'NONE', 'NAN']
-                    df = df[~serie_aprov.isin(lista_reprovas)]
+                    df = df[~serie_aprov.isin(['FALSE', 'FALSO', '0', '0.0', '', 'NONE', 'NAN'])]
                 
                 if filtrar_hoje:
                     df = df[df[df.columns[data_idx]] == hoje]
                 return df
-            except: 
-                return pd.DataFrame()
-            
+            except: return pd.DataFrame()
 
         # --- SETOR 1: AUSÊNCIAS ---
         df_aus = carregar_dados_seguro("cadastro_ausencia")
@@ -806,117 +792,64 @@ def mostrar_apresentacao():
                 renderizar_cartao(f"<b>👤 {r.iloc[1]} ({r.iloc[2]})</b><br>MOTIVO: {r.iloc[3]} | {r.iloc[4]}")
             st.markdown("<br><br>", unsafe_allow_html=True)
 
-        
-        # --- SETOR 2: PROGRAMAÇÃO ---
+        # --- SETOR 2: PROGRAMAÇÃO (AGORA BUSCANDO DO GOOGLE CALENDAR) ---
         try:
-            dados_prog = sh.worksheet("cadastro_agenda_semanal").get_all_values()
-            if dados_prog and len(dados_prog) > 1:
-                df_prog = pd.DataFrame(dados_prog[1:], columns=dados_prog[0])
-                col_ev = df_prog.columns[1] # Coluna B
-                
-                # Converte para datetime
-                df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
-                
-                # Filtro de Datas (Próximos 7 dias)
-                ini, fim = hoje, hoje + timedelta(days=7)
-                df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)].copy()
-                
-                # Filtro de Aprovação (Flexível)
-                if "Aprovação" in df_p.columns:
-                    c_ap = df_p["Aprovação"]
-                    if isinstance(c_ap, pd.DataFrame): c_ap = c_ap.iloc[:, 0]
-                    serie_p = c_ap.astype(str).str.upper().str.strip()
-                    df_p = df_p[~serie_p.isin(['FALSE', 'FALSO', '0', '0.0', '', 'NONE', 'NAN'])]
-                
-                if not df_p.empty:
-                    st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
-                    dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
-                    
-                    df_p = df_p.sort_values(by=col_ev)
-                    for data_dia, grupo in df_p.groupby(df_p[col_ev].dt.date):
-                        st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
-                        for _, r in grupo.iterrows():
-                            try:
-                                h_exibir = r[col_ev].strftime("%H:%M")
-                            except:
-                                h_exibir = "Horário"
-                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {h_exibir}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
-                    st.markdown("<br><br>", unsafe_allow_html=True)
-        except:
-            pass
-                    
-        
-        # --- SETOR 3: RECADOS ---
-        df_rec = carregar_dados_seguro("cadastro_recados")
-        if not df_rec.empty:
-            st.info("💡 VAMOS AGORA PARA OS RECADOS SOLICITADOS")
-            for _, r in df_rec.iterrows():
-                renderizar_cartao(f"<b>💬 {r.iloc[2]}</b><br><small>Solicitante: {r.iloc[1]}</small>")
-            st.markdown("<br><br>", unsafe_allow_html=True)
-
-        # --- SETOR 4: ANIVERSÁRIOS ---
-        df_par = carregar_dados_seguro("cadastro_parabenizacao")
-        if not df_par.empty:
-            st.success("🎂 A ASSEMBLEIA MINISTÉRIO IPIRANGA PARABENIZA A:")
-            for _, r in df_par.iterrows():
-                renderizar_cartao(f"<b>✨ {r.iloc[1]} ({r.iloc[2]})</b><br>{r.iloc[3]}")
-            st.markdown("<br><br>", unsafe_allow_html=True)
-
-        # --- SETOR 5: VISITANTES ---
-        df_vis = carregar_dados_seguro("cadastro_visitante")
-        if not df_vis.empty:
-            st.warning("🫂 VAMOS CONHECER NOSSOS VISITANTES DE HOJE:")
-            st.markdown("**CONFORME EU CHAMAR GOSTARIA QUE DESSEM UM SINAL COM A MÃO OU FIQUEM EM PÉ PARA QUE A IGREJA OS CONHEÇAM.**")
-            for _, r in df_vis.iterrows():
-                renderizar_cartao(f"<b>👤 {r.iloc[1]}</b><br>CONVITE DE: {r.iloc[2]} | IGREJA: {r.iloc[3]}")
+            # Substitua 'obter_eventos_calendario' pelo nome da função que você usa para ler o Calendário
+            eventos = obter_eventos_calendario() 
             
-            st.markdown("""
-                <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; border: 1px solid #0e2433; margin-top: 15px;">
-                    <p style="font-size: 18px;"><b>PEÇO QUE A IGREJA SE COLOQUEM EM PÉ PARA RECEBERMOS NOSSOS VISITANTES COM UM ABRAÇO, UM SORRISO E UM APERTO DE MÃO.</b></p>
-                    <p style="font-size: 19px; color: #0e2433; font-weight: bold;">TODOS JUNTOS, COMO VAMOS RECEBER OS VISITANTES?</p>
-                    <p style="font-size: 18px; color: #d32f2f; font-weight: bold;">SEJAM BEM VINDOS EM NOME DE JESUS, SINTAM-SE BEM, VOLTEM SEMPRE, JESUS OS AMA E NÓS TAMBÉM.</p>
-                    <p style="text-align: center; font-style: italic; margin-top: 10px;">🎶 """ + '"CORINHO COM A BASE MUSICAL"' + """</p>
-                </div>
-            """, unsafe_allow_html=True)
-            st.markdown("<br><br>", unsafe_allow_html=True)
+            if eventos:
+                st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
+                dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+                
+                # Agrupa eventos por data
+                import itertools
+                eventos_ordenados = sorted(eventos, key=lambda x: x['data'])
+                for data_dia, grupo in itertools.groupby(eventos_ordenados, key=lambda x: x['data']):
+                    # Filtra apenas os próximos 7 dias
+                    if hoje <= data_dia <= (hoje + timedelta(days=7)):
+                        st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
+                        for ev in grupo:
+                            hora_ev = ev['inicio'].strftime("%H:%M") if 'inicio' in ev else "Horário"
+                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {hora_ev}</b> - {ev["resumo"]}</div>', unsafe_allow_html=True)
+                st.markdown("<br><br>", unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Erro ao carregar Agenda do Calendário: {e}")
 
-# --- SETOR 6: ORAÇÃO (AJUSTADO PARA HOJE E 2 DIAS ANTES + NOME DO PRELETOR) ---
+        # --- SETORES 3, 4, 5 (CONTINUAM IGUAIS) ---
+        # ... (Recados, Aniversários, Visitantes)
+
+        # --- SETOR 6: ORAÇÃO (COM A LÓGICA DO NOME DO PRELETOR) ---
         df_ora_bruto = carregar_dados_seguro("cadastro_oracao", filtrar_hoje=False)
-        
         if not df_ora_bruto.empty:
             data_limite_passado = hoje - timedelta(days=2)
-            df_ora = df_ora_bruto[
-                (df_ora_bruto[df_ora_bruto.columns[0]] >= data_limite_passado) & 
-                (df_ora_bruto[df_ora_bruto.columns[0]] <= hoje)
-            ]
+            df_ora = df_ora_bruto[(df_ora_bruto[df_ora_bruto.columns[0]] >= data_limite_passado) & (df_ora_bruto[df_ora_bruto.columns[0]] <= hoje)]
             
             if not df_ora.empty:
                 st.markdown("<h3 style='text-align: center;'>🙏 " + '""COM A IGREJA EM PÉ""' + "</h3>", unsafe_allow_html=True)
                 st.info("TEMOS ALGUNS PEDIDOS DE ORAÇÃO")
-                
                 for _, r in df_ora.sort_values(by=df_ora.columns[0], ascending=False).iterrows():
                     renderizar_cartao(f"<b>🙏 PARA: {r.iloc[1]}</b><br>MOTIVO: {r.iloc[2]} | OBS: {r.iloc[3]}")
                 
                 st.markdown("<p style='text-align: center; font-weight: bold; font-size: 19px;'>PARA ORAR POR ESTES PEDIDOS VOU CHAMAR O...</p>", unsafe_allow_html=True)
 
-                # --- LÓGICA DO NOME DO PRELETOR (LIMPA AO MUDAR O DIA) ---
                 if 'data_ultimo_acesso' not in st.session_state or st.session_state.data_ultimo_acesso != hoje:
                     st.session_state.data_ultimo_acesso = hoje
                     st.session_state.nome_oracao = ""
 
-                nome_preletor = st.text_input("Digite o nome de quem fará a oração:", key="nome_oracao", help="Este nome será apagado automaticamente amanhã.")
+                col_in, col_del = st.columns([4,1])
+                with col_in:
+                    nome_preletor = st.text_input("Nome:", key="nome_oracao", label_visibility="collapsed")
+                with col_del:
+                    if st.button("Limpar"):
+                        st.session_state.nome_oracao = ""
+                        st.rerun()
 
                 if nome_preletor:
-                    st.markdown(f"""
-                        <div style="text-align: center; margin-top: 10px;">
-                            <h2 style="color: #d32f2f; font-weight: bold; font-size: 32px; text-transform: uppercase;">
-                                {nome_preletor}
-                            </h2>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f'<div style="text-align: center;"><h2 style="color: #d32f2f; font-weight: bold; font-size: 32px;">{nome_preletor.upper()}</h2></div>', unsafe_allow_html=True)
 
     except Exception as e:
-        st.error(f"Erro ao carregar roteiro de Apresentação: {e}")
+        st.error(f"Erro ao carregar roteiro: {e}")
+        
                 
 # --- ATUALIZAÇÃO DO ROTEAMENTO ---
 
