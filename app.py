@@ -770,26 +770,30 @@ def mostrar_apresentacao():
         # Função de segurança para carregar e filtrar dados (VERSÃO FINAL CORRIGIDA)
         def carregar_dados_seguro(aba_nome, data_idx=0, filtrar_hoje=True):
             try:
+                # Carrega todos os valores da aba
                 dados = sh.worksheet(aba_nome).get_all_values()
                 if not dados or len(dados) < 2: return pd.DataFrame()
                 
+                # Cria DataFrame e limpa nomes de colunas
                 df = pd.DataFrame(dados[1:], columns=dados[0])
                 
-                # Converte a coluna de data e remove a hora para comparação
+                # Converte a coluna de data
                 df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
                 
-                # Filtro de Aprovação
+                # FILTRO DE APROVAÇÃO MELHORADO
                 if "Aprovação" in df.columns:
                     col_aprov = df["Aprovação"]
-                    # Se houver duplicidade, col_aprov vira DataFrame, pegamos a primeira série
-                    if isinstance(col_aprov, pd.DataFrame):
+                    if isinstance(col_aprov, pd.DataFrame): 
                         col_aprov = col_aprov.iloc[:, 0]
                     
-                    # Filtro: Mantém apenas o que for VERDADEIRO ou TRUE (caixa de seleção marcada)
-                    df = df[col_aprov.astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])]
+                    # Converte para string, remove espaços e coloca em maiúsculo
+                    status = col_aprov.astype(str).str.upper().str.strip()
+                    
+                    # Aceita TRUE (checkbox), VERDADEIRO, ou se a célula simplesmente não for vazia/FALSO
+                    # Se você usa checkbox, o Sheets envia 'TRUE' ou 'FALSE'
+                    df = df[status.isin(['TRUE', 'VERDADEIRO', 'SIM', 'CHECKED'])]
                 
                 if filtrar_hoje:
-                    # Garante que 'hoje' e a coluna de data são do mesmo tipo (date)
                     df = df[df[df.columns[data_idx]] == hoje]
                 return df
             except: 
@@ -812,38 +816,39 @@ def mostrar_apresentacao():
                 df_prog = pd.DataFrame(dados_prog[1:], columns=dados_prog[0])
                 col_ev = df_prog.columns[1] # Coluna B (Data)
                 
-                # Converte a coluna para datetime
+                # Converte para datetime para permitir ordenação e filtro de data
                 df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
                 
-                # Define o intervalo: de Hoje até Hoje + 7
-                ini = hoje
-                fim = hoje + timedelta(days=7)
+                # Intervalo de 7 dias a partir de hoje
+                ini, fim = hoje, hoje + timedelta(days=7)
                 
-                # Filtra o período
+                # Filtro por data
                 df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)].copy()
                 
-                # Filtro de Aprovação (Mesma lógica robusta)
+                # Filtro por Aprovação (Lógica idêntica à função de segurança)
                 if "Aprovação" in df_p.columns:
-                    c_aprov = df_p["Aprovação"]
-                    if isinstance(c_aprov, pd.DataFrame): c_aprov = c_aprov.iloc[:, 0]
-                    df_p = df_p[c_aprov.astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])]
+                    col_ap = df_p["Aprovação"]
+                    if isinstance(col_ap, pd.DataFrame): col_ap = col_ap.iloc[:, 0]
+                    status_p = col_ap.astype(str).str.upper().str.strip()
+                    df_p = df_p[status_p.isin(['TRUE', 'VERDADEIRO', 'SIM', 'CHECKED'])]
                 
                 if not df_p.empty:
                     st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
                     dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
                     
-                    # Ordena cronologicamente
+                    # Ordenar cronologicamente por Data e Hora
                     df_p = df_p.sort_values(by=col_ev)
                     
                     for data_dia, grupo in df_p.groupby(df_p[col_ev].dt.date):
                         st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
                         for _, r in grupo.iterrows():
-                            # Formatação da Hora
-                            h = r[col_ev].strftime("%H:%M") if pd.notnull(r[col_ev]) else "Horário"
-                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {h}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
+                            # Se a hora for válida, formata. Senão, mostra Horário
+                            hora = r[col_ev].strftime("%H:%M") if pd.notnull(r[col_ev]) else "Horário"
+                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {hora}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
                     st.markdown("<br><br>", unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"Erro ao carregar a agenda: {e}")
+            # st.error(f"Debug Agenda: {e}") # Descomente se precisar ver o erro exato
+            pass
             
         
         # --- SETOR 3: RECADOS ---
