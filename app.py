@@ -616,6 +616,7 @@ from googleapiclient.discovery import build
 def obter_eventos_calendario():
     try:
         sh = conectar() 
+        # Acessa as credenciais corretamente pelo cliente
         credentials = sh.client.auth 
         service = build('calendar', 'v3', credentials=credentials)
 
@@ -624,19 +625,11 @@ def obter_eventos_calendario():
         calendars = calendar_list.get('items', [])
         calendar_id = next((cal['id'] for cal in calendars if cal.get('summary') == "Cultos"), "midia.digital.ipiranga@gmail.com")
 
-        # 2. BUSCAR DADOS DE "CACHE" NA PLANILHA (Para lembrar o que foi reprovado)
-        try:
-            aba_cache = sh.worksheet("cadastro_agenda_semanal")
-            dados_cache = aba_cache.get_all_records()
-            df_cache = pd.DataFrame(dados_cache)
-        except:
-            df_cache = pd.DataFrame(columns=["Aprovação", "Evento", "Horário"])
-
         hoje = obter_hoje_brasil()
         agora = datetime.combine(hoje, datetime.min.time()).isoformat() + 'Z'
         limite = datetime.combine(hoje + timedelta(days=7), datetime.max.time()).isoformat() + 'Z'
 
-        # 3. BUSCAR EVENTOS NO GOOGLE CALENDAR
+        # 2. BUSCAR EVENTOS NO GOOGLE CALENDAR
         events_result = service.events().list(
             calendarId=calendar_id, 
             timeMin=agora, 
@@ -651,25 +644,21 @@ def obter_eventos_calendario():
         for ev in eventos:
             start = ev['start'].get('dateTime', ev['start'].get('date'))
             start_dt = pd.to_datetime(start).replace(tzinfo=None)
-            resumo = ev.get('summary', '(Sem Título)')
-            id_evento = ev.get('id') # Importante para poder escrever de volta
             
-            # Lógica para manter a cor: Verifica se este evento já foi reprovado na planilha
-            status_aprovacao = True
-            if not df_cache.empty:
-                # Procura pelo nome e horário no cache
-                match = df_cache[df_cache['Evento'] == resumo]
-                if not match.empty:
-                    # Se na planilha estiver 0, False ou vazio, reprova aqui também
-                    val = str(match.iloc[0]['Aprovação']).upper()
-                    if val in ['0', 'FALSE', 'FALSO', '']:
-                        status_aprovacao = False
-
+            resumo_original = ev.get('summary', '(Sem Título)')
+            
+            # --- LÓGICA DE DETECÇÃO (A chave para não resetar o flag) ---
+            # Se o título já contém [REPROVADO], o flag de aprovação inicia como FALSE
+            is_reprovado = "[REPROVADO]" in resumo_original.upper()
+            
+            # Limpamos o nome para exibição no Streamlit (tira o sufixo horroroso)
+            resumo_exibicao = resumo_original.replace("[REPROVADO]", "").replace("[reprovado]", "").strip()
+            
             dados_formatados.append({
-                "ID": id_evento,
+                "ID": ev.get('id'),
                 "Data": start_dt,
-                "Evento": resumo,
-                "Aprovação": status_aprovacao 
+                "Evento": resumo_exibicao,
+                "Aprovação": not is_reprovado # Se tem a tag, aprovação é False (Vermelho)
             })
             
         return pd.DataFrame(dados_formatados), service, calendar_id
@@ -683,7 +672,7 @@ def gerenciar_programacao():
     st.markdown("---")
 
     try:
-        # Busca eventos, serviço e ID da agenda
+        # Busca eventos com a nova lógica de detecção
         df_original, service_cal, cal_id = obter_eventos_calendario()
         
         if df_original.empty:
@@ -691,17 +680,15 @@ def gerenciar_programacao():
             return
         
         hoje = obter_hoje_brasil()
-        
-        # Filtra e ordena
         df_semana = df_original.copy().sort_values(by="Data")
 
-        # --- EXIBIÇÃO DOS CARTÕES ---
+        # --- EXIBIÇÃO DOS CARTÕES COLORIDOS ---
         dias_semana_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
 
         for data_dia, grupo in df_semana.groupby(df_semana["Data"].dt.date):
             st.subheader(f"{dias_semana_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})")
             for _, row in grupo.iterrows():
-                # Agora a cor respeitará o que está salvo na planilha!
+                # A cor agora seguirá fielmente o que está no Google Agenda
                 cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
                 st.markdown(f"""
                     <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 8px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
@@ -715,37 +702,42 @@ def gerenciar_programacao():
         df_editado = st.data_editor(
             df_semana[["Aprovação", "Horário", "Evento", "ID"]],
             use_container_width=True, hide_index=True,
-            column_config={"ID": None}, # Esconde a coluna ID
-            key="ed_agenda_v4"
+            column_config={"ID": None}, # Oculta o ID do usuário
+            key="ed_atrio_v5"
         )
 
         if st.button("💾 CONFIRMAR E SINCRONIZAR", use_container_width=True):
-            with st.spinner("Sincronizando Agenda e Planilha..."):
-                sh = conectar()
-                
-                # 1. SALVAR NA PLANILHA (Para o Telão)
-                aba = sh.worksheet("cadastro_agenda_semanal")
-                df_para_sheets = df_editado[["Aprovação", "Horário", "Evento"]].fillna("")
-                aba.update("A1", [df_para_sheets.columns.values.tolist()] + df_para_sheets.values.tolist())
-
-                # 2. TENTAR ESCREVER NO GOOGLE AGENDA (Opcional: Muda o título se reprovado)
+            with st.spinner("Atualizando Google Agenda..."):
+                # 1. SINCRONIZAÇÃO COM O GOOGLE AGENDA
                 if service_cal:
                     for _, row in df_editado.iterrows():
+                        # Nome base vindo do editor
+                        nome_final = row['Evento']
+                        
+                        if not row['Aprovação']:
+                            # Adiciona a tag se não existir
+                            if "[REPROVADO]" not in nome_final.upper():
+                                nome_final = f"[REPROVADO] {nome_final}"
+                        else:
+                            # REMOVE a tag se existir (Permite Re-aprovar!)
+                            nome_final = nome_final.replace("[REPROVADO]", "").replace("[reprovado]", "").strip()
+
+                        # Envia o novo título para o Google
                         try:
-                            # Se você quiser que o nome mude no Google Agenda ao reprovar:
-                            novo_nome = row['Evento']
-                            if not row['Aprovação'] and "[REPROVADO]" not in novo_nome:
-                                novo_nome = f"[REPROVADO] {novo_nome}"
-                            
                             event = service_cal.events().get(calendarId=cal_id, eventId=row['ID']).execute()
-                            event['summary'] = novo_nome
+                            event['summary'] = nome_final
                             service_cal.events().update(calendarId=cal_id, eventId=row['ID'], body=event).execute()
                         except:
                             continue
 
-                st.success("✅ Tudo sincronizado!")
-                time.sleep(1)
-                st.rerun()
+                # 2. SALVA NA PLANILHA (Para o Telão consumir)
+                sh = conectar()
+                aba = sh.worksheet("cadastro_agenda_semanal")
+                df_para_sheets = df_editado[["Aprovação", "Horário", "Evento"]].fillna("")
+                aba.update("A1", [df_para_sheets.columns.values.tolist()] + df_para_sheets.values.tolist())
+
+                st.success("✅ Agenda e Telão atualizados!")
+                time.sleep(1); st.rerun()
 
     except Exception as e:
         st.error(f"Falha no sistema: {e}")
