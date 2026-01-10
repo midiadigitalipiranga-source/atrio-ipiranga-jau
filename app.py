@@ -632,7 +632,7 @@ def obter_eventos_calendario():
         
         # Fallback para o e-mail principal caso a agenda não seja encontrada pelo nome
         if not calendar_id:
-            calendar_id = "midia.digital.ipiranga@gmail.com"
+            calendar_id = "9d81fa51b695a700a65ebca8bba1bf179ba3857507f330e5b1e309d5292d0ec5@group.calendar.google.com"
 
         hoje = obter_hoje_brasil()
         # Define o range: do início de hoje até o fim de 7 dias à frente
