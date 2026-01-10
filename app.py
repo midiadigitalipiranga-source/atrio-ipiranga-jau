@@ -769,21 +769,29 @@ def mostrar_apresentacao():
         # Função de segurança para carregar e filtrar dados
         def carregar_dados_seguro(aba_nome, data_idx=0, filtrar_hoje=True):
             try:
-                df = pd.DataFrame(sh.worksheet(aba_nome).get_all_records())
+                # Carrega todos os valores como lista de listas para evitar erro de cabeçalho duplicado
+                dados = sh.worksheet(aba_nome).get_all_values()
+                if not dados: return pd.DataFrame()
+                
+                # Transforma em DataFrame usando a primeira linha como cabeçalho
+                df = pd.DataFrame(dados[1:], columns=dados[0])
+                
                 if df.empty: return pd.DataFrame()
                 
-                # Tratamento da Data (limpa hora do carimbo)
+                # Tratamento da Data
                 df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
                 
-                # Filtro de Aprovação (Trata erro 'Aprovação')
-                if "Aprovação" in df.columns:
-                    df = df[~df["Aprovação"].astype(str).isin(['0', 'False', 'FALSO'])]
+                # Filtro de Aprovação (Trata múltiplas colunas se houver)
+                colunas_aprov = [c for c in df.columns if "Aprovação" in c]
+                for col in colunas_aprov:
+                    df = df[~df[col].astype(str).isin(['0', 'False', 'FALSO', 'false', '0.0'])]
                 
                 # Filtro de Hoje
                 if filtrar_hoje:
                     df = df[df[df.columns[data_idx]] == hoje]
                 return df
-            except: return pd.DataFrame()
+            except Exception as e: 
+                return pd.DataFrame()
 
         # --- SETOR 1: AUSÊNCIAS ---
         df_aus = carregar_dados_seguro("cadastro_ausencia")
@@ -794,32 +802,36 @@ def mostrar_apresentacao():
             st.markdown("<br><br>", unsafe_allow_html=True)
 
 # --- SETOR 2: PROGRAMAÇÃO ---
-        df_prog = pd.DataFrame(sh.worksheet("cadastro_agenda_semanal").get_all_records())
-        if not df_prog.empty:
-            col_ev = df_prog.columns[1] # Coluna B
-            df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
-            
-            # Define o intervalo: de hoje até hoje + 7 dias
-            ini = hoje
-            fim = hoje + timedelta(days=7)
-            
-            # Filtra os dados dentro do intervalo e que estão aprovados
-            df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)]
-            
-            if "Aprovação" in df_p.columns:
-                df_p = df_p[~df_p["Aprovação"].astype(str).isin(['0', 'False', 'FALSO'])]
-            
-            if not df_p.empty:
-                st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
-                dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+        try:
+            dados_prog = sh.worksheet("cadastro_agenda_semanal").get_all_values()
+            if dados_prog:
+                df_prog = pd.DataFrame(dados_prog[1:], columns=dados_prog[0])
+                col_ev = df_prog.columns[1] # Coluna B
+                df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
                 
-                # Ordena por data e hora para a leitura ficar lógica
-                for data_dia, grupo in df_p.sort_values(by=col_ev).groupby(df_p[col_ev].dt.date):
-                    st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
-                    for _, r in grupo.iterrows():
-                        st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {r[col_ev].strftime("%H:%M")}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
-                st.markdown("<br><br>", unsafe_allow_html=True)
-
+                ini = hoje
+                fim = hoje + timedelta(days=7)
+                
+                df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)].copy()
+                
+                # Filtro de Aprovação Robusto
+                colunas_aprov_p = [c for c in df_p.columns if "Aprovação" in c]
+                for col in colunas_aprov_p:
+                    df_p = df_p[~df_p[col].astype(str).isin(['0', 'False', 'FALSO', 'false'])]
+                
+                if not df_p.empty:
+                    st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
+                    dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+                    
+                    for data_dia, grupo in df_p.sort_values(by=col_ev).groupby(df_p[col_ev].dt.date):
+                        st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
+                        for _, r in grupo.iterrows():
+                            # Formata a hora se for datetime, senão exibe o texto bruto
+                            hora_formatada = r[col_ev].strftime("%H:%M") if pd.notnull(r[col_ev]) else "--:--"
+                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {hora_formatada}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
+                    st.markdown("<br><br>", unsafe_allow_html=True)
+        except:
+            pass
         # --- SETOR 3: RECADOS ---
         df_rec = carregar_dados_seguro("cadastro_recados")
         if not df_rec.empty:
