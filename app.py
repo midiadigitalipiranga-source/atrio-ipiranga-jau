@@ -103,7 +103,7 @@ def conectar():
     SCOPES = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
-        "https://www.googleapis.com/auth/calendar.readonly"
+        "https://www.googleapis.com/auth/calendar"
     ]
 
     # 2. CARREGAR OS DADOS DO SECRETS
@@ -613,81 +613,30 @@ import time
 from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 
-# --- FUNÇÃO AUXILIAR: BUSCA NO GOOGLE CALENDAR ---
 def obter_eventos_calendario():
     try:
         sh = conectar() 
-        credentials = sh.auth.service_account_creds
+        credentials = sh.client.auth 
         service = build('calendar', 'v3', credentials=credentials)
 
         # 1. LOCALIZAR O ID DA AGENDA "CULTOS"
         calendar_list = service.calendarList().list().execute()
         calendars = calendar_list.get('items', [])
-        
-        calendar_id = None
-        for cal in calendars:
-            if cal.get('summary') == "Cultos":
-                calendar_id = cal.get('id')
-                break
-        
-        # Fallback para o e-mail principal caso a agenda não seja encontrada pelo nome
-        if not calendar_id:
-            calendar_id = "9d81fa51b695a700a65ebca8bba1bf179ba3857507f330e5b1e309d5292d0ec5@group.calendar.google.com"
-
-        hoje = obter_hoje_brasil()
-        # Define o range: do início de hoje até o fim de 7 dias à frente
-        agora = datetime.combine(hoje, datetime.min.time()).isoformat() + 'Z'
-        limite = datetime.combine(hoje + timedelta(days=7), datetime.max.time()).isoformat() + 'Z'
-
-        # 2. BUSCAR EVENTOS
-        events_result = service.events().list(
-            calendarId=calendar_id, 
-            timeMin=agora, 
-            timeMax=limite,
-            singleEvents=True, 
-            orderBy='startTime'
-        ).execute()
-        
-        eventos = events_result.get('items', [])
-        
-        dados_formatados = []
-        for ev in eventos:
-            start = ev['start'].get('dateTime', ev['start'].get('date'))
-            # Tratamento da data para o Pandas
-            start_dt = pd.to_datetime(start).replace(tzinfo=None)
-            
-            dados_formatados.append({
-                "Data": start_dt,
-                "Evento": ev.get('summary', '(Sem Título)'),
-                "Aprovação": True # Padrão inicial como aprovado (Verde)
-            })
-            
-        return pd.DataFrame(dados_formatados)
-    except Exception as e:
-        st.error(f"Erro ao acessar a agenda 'Cultos': {e}")
-        return pd.DataFrame()
-
-
-
-# --- FUNÇÃO DE BUSCA CORRIGIDA ---
-def obter_eventos_calendario():
-    try:
-        sh = conectar() 
-        # Agora o credentials terá o "visto" para entrar no Calendário
-        credentials = sh.client.auth 
-        
-        service = build('calendar', 'v3', credentials=credentials)
-
-        # Localiza a agenda "Cultos"
-        calendar_list = service.calendarList().list().execute()
-        calendars = calendar_list.get('items', [])
-        
         calendar_id = next((cal['id'] for cal in calendars if cal.get('summary') == "Cultos"), "midia.digital.ipiranga@gmail.com")
 
+        # 2. BUSCAR DADOS DE "CACHE" NA PLANILHA (Para lembrar o que foi reprovado)
+        try:
+            aba_cache = sh.worksheet("cadastro_agenda_semanal")
+            dados_cache = aba_cache.get_all_records()
+            df_cache = pd.DataFrame(dados_cache)
+        except:
+            df_cache = pd.DataFrame(columns=["Aprovação", "Evento", "Horário"])
+
         hoje = obter_hoje_brasil()
         agora = datetime.combine(hoje, datetime.min.time()).isoformat() + 'Z'
         limite = datetime.combine(hoje + timedelta(days=7), datetime.max.time()).isoformat() + 'Z'
 
+        # 3. BUSCAR EVENTOS NO GOOGLE CALENDAR
         events_result = service.events().list(
             calendarId=calendar_id, 
             timeMin=agora, 
@@ -702,46 +651,57 @@ def obter_eventos_calendario():
         for ev in eventos:
             start = ev['start'].get('dateTime', ev['start'].get('date'))
             start_dt = pd.to_datetime(start).replace(tzinfo=None)
+            resumo = ev.get('summary', '(Sem Título)')
+            id_evento = ev.get('id') # Importante para poder escrever de volta
             
+            # Lógica para manter a cor: Verifica se este evento já foi reprovado na planilha
+            status_aprovacao = True
+            if not df_cache.empty:
+                # Procura pelo nome e horário no cache
+                match = df_cache[df_cache['Evento'] == resumo]
+                if not match.empty:
+                    # Se na planilha estiver 0, False ou vazio, reprova aqui também
+                    val = str(match.iloc[0]['Aprovação']).upper()
+                    if val in ['0', 'FALSE', 'FALSO', '']:
+                        status_aprovacao = False
+
             dados_formatados.append({
+                "ID": id_evento,
                 "Data": start_dt,
-                "Evento": ev.get('summary', '(Sem Título)'),
-                "Aprovação": True 
+                "Evento": resumo,
+                "Aprovação": status_aprovacao 
             })
             
-        return pd.DataFrame(dados_formatados)
+        return pd.DataFrame(dados_formatados), service, calendar_id
     except Exception as e:
         st.error(f"Erro ao acessar a agenda 'Cultos': {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), None, None
 
-# --- MÓDULO PRINCIPAL ---
 def gerenciar_programacao():
     st.title("🗓️ Agenda da Igreja")
     st.link_button("📅 Abrir Google Agenda", "https://calendar.google.com/", use_container_width=True)
     st.markdown("---")
 
     try:
-        df_original = obter_eventos_calendario()
+        # Busca eventos, serviço e ID da agenda
+        df_original, service_cal, cal_id = obter_eventos_calendario()
         
         if df_original.empty:
             st.info("📅 Nenhum evento encontrado para os próximos 7 dias.")
             return
         
         hoje = obter_hoje_brasil()
-        fim_periodo = hoje + timedelta(days=7)
         
         # Filtra e ordena
-        df_semana = df_original[
-            (df_original["Data"].dt.date >= hoje) & 
-            (df_original["Data"].dt.date <= fim_periodo)
-        ].copy().sort_values(by="Data")
+        df_semana = df_original.copy().sort_values(by="Data")
 
-        # Exibição dos Cartões (Lógica de cores preservada)
+        # --- EXIBIÇÃO DOS CARTÕES ---
         dias_semana_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
 
         for data_dia, grupo in df_semana.groupby(df_semana["Data"].dt.date):
             st.subheader(f"{dias_semana_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})")
             for _, row in grupo.iterrows():
+                # Agora a cor respeitará o que está salvo na planilha!
                 cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
                 st.markdown(f"""
                     <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 8px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
@@ -749,22 +709,43 @@ def gerenciar_programacao():
                     </div>
                 """, unsafe_allow_html=True)
 
-        # Painel de Edição e Salvamento
+        # Painel de Edição
         st.markdown("---")
         df_semana["Horário"] = df_semana["Data"].dt.strftime('%d/%m %H:%M')
         df_editado = st.data_editor(
-            df_semana[["Aprovação", "Horário", "Evento"]],
+            df_semana[["Aprovação", "Horário", "Evento", "ID"]],
             use_container_width=True, hide_index=True,
-            key="ed_agenda_v3"
+            column_config={"ID": None}, # Esconde a coluna ID
+            key="ed_agenda_v4"
         )
 
-        if st.button("💾 CONFIRMAR PROGRAMAÇÃO", use_container_width=True):
-            sh = conectar()
-            aba = sh.worksheet("cadastro_agenda_semanal")
-            df_para_salvar = df_editado.fillna("")
-            aba.update("A1", [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist())
-            st.success("✅ Salvo com sucesso!")
-            time.sleep(1); st.rerun()
+        if st.button("💾 CONFIRMAR E SINCRONIZAR", use_container_width=True):
+            with st.spinner("Sincronizando Agenda e Planilha..."):
+                sh = conectar()
+                
+                # 1. SALVAR NA PLANILHA (Para o Telão)
+                aba = sh.worksheet("cadastro_agenda_semanal")
+                df_para_sheets = df_editado[["Aprovação", "Horário", "Evento"]].fillna("")
+                aba.update("A1", [df_para_sheets.columns.values.tolist()] + df_para_sheets.values.tolist())
+
+                # 2. TENTAR ESCREVER NO GOOGLE AGENDA (Opcional: Muda o título se reprovado)
+                if service_cal:
+                    for _, row in df_editado.iterrows():
+                        try:
+                            # Se você quiser que o nome mude no Google Agenda ao reprovar:
+                            novo_nome = row['Evento']
+                            if not row['Aprovação'] and "[REPROVADO]" not in novo_nome:
+                                novo_nome = f"[REPROVADO] {novo_nome}"
+                            
+                            event = service_cal.events().get(calendarId=cal_id, eventId=row['ID']).execute()
+                            event['summary'] = novo_nome
+                            service_cal.events().update(calendarId=cal_id, eventId=row['ID'], body=event).execute()
+                        except:
+                            continue
+
+                st.success("✅ Tudo sincronizado!")
+                time.sleep(1)
+                st.rerun()
 
     except Exception as e:
         st.error(f"Falha no sistema: {e}")
