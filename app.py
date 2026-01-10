@@ -770,35 +770,33 @@ def mostrar_apresentacao():
         # Função de segurança para carregar e filtrar dados (VERSÃO FINAL CORRIGIDA)
         def carregar_dados_seguro(aba_nome, data_idx=0, filtrar_hoje=True):
             try:
-                # Carrega todos os valores da aba
                 dados = sh.worksheet(aba_nome).get_all_values()
                 if not dados or len(dados) < 2: return pd.DataFrame()
                 
-                # Cria DataFrame e limpa nomes de colunas
                 df = pd.DataFrame(dados[1:], columns=dados[0])
                 
-                # Converte a coluna de data
+                # Tratamento da Data
                 df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
                 
-                # FILTRO DE APROVAÇÃO MELHORADO
+                # FILTRO DE APROVAÇÃO (MUITO MAIS FLEXÍVEL)
                 if "Aprovação" in df.columns:
-                    col_aprov = df["Aprovação"]
-                    if isinstance(col_aprov, pd.DataFrame): 
-                        col_aprov = col_aprov.iloc[:, 0]
+                    col_ap = df["Aprovação"]
+                    if isinstance(col_ap, pd.DataFrame): col_ap = col_ap.iloc[:, 0]
                     
-                    # Converte para string, remove espaços e coloca em maiúsculo
-                    status = col_aprov.astype(str).str.upper().str.strip()
+                    # Converte para texto e limpa
+                    serie_aprov = col_ap.astype(str).str.upper().str.strip()
                     
-                    # Aceita TRUE (checkbox), VERDADEIRO, ou se a célula simplesmente não for vazia/FALSO
-                    # Se você usa checkbox, o Sheets envia 'TRUE' ou 'FALSE'
-                    df = df[status.isin(['TRUE', 'VERDADEIRO', 'SIM', 'CHECKED'])]
+                    # Lógica: SÓ remove se for explicitamente algo que indique "não aprovado"
+                    # Se estiver vazio, o Streamlit/Sheets às vezes envia '', 'FALSE' ou '0'
+                    lista_reprovas = ['FALSE', 'FALSO', '0', '0.0', '', 'NONE', 'NAN']
+                    df = df[~serie_aprov.isin(lista_reprovas)]
                 
                 if filtrar_hoje:
                     df = df[df[df.columns[data_idx]] == hoje]
                 return df
             except: 
                 return pd.DataFrame()
-
+            
 
         # --- SETOR 1: AUSÊNCIAS ---
         df_aus = carregar_dados_seguro("cadastro_ausencia")
@@ -814,42 +812,39 @@ def mostrar_apresentacao():
             dados_prog = sh.worksheet("cadastro_agenda_semanal").get_all_values()
             if dados_prog and len(dados_prog) > 1:
                 df_prog = pd.DataFrame(dados_prog[1:], columns=dados_prog[0])
-                col_ev = df_prog.columns[1] # Coluna B (Data)
+                col_ev = df_prog.columns[1] # Coluna B
                 
-                # Converte para datetime para permitir ordenação e filtro de data
+                # Converte para datetime
                 df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
                 
-                # Intervalo de 7 dias a partir de hoje
+                # Filtro de Datas (Próximos 7 dias)
                 ini, fim = hoje, hoje + timedelta(days=7)
-                
-                # Filtro por data
                 df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)].copy()
                 
-                # Filtro por Aprovação (Lógica idêntica à função de segurança)
+                # Filtro de Aprovação (Flexível)
                 if "Aprovação" in df_p.columns:
-                    col_ap = df_p["Aprovação"]
-                    if isinstance(col_ap, pd.DataFrame): col_ap = col_ap.iloc[:, 0]
-                    status_p = col_ap.astype(str).str.upper().str.strip()
-                    df_p = df_p[status_p.isin(['TRUE', 'VERDADEIRO', 'SIM', 'CHECKED'])]
+                    c_ap = df_p["Aprovação"]
+                    if isinstance(c_ap, pd.DataFrame): c_ap = c_ap.iloc[:, 0]
+                    serie_p = c_ap.astype(str).str.upper().str.strip()
+                    df_p = df_p[~serie_p.isin(['FALSE', 'FALSO', '0', '0.0', '', 'NONE', 'NAN'])]
                 
                 if not df_p.empty:
                     st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
                     dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
                     
-                    # Ordenar cronologicamente por Data e Hora
                     df_p = df_p.sort_values(by=col_ev)
-                    
                     for data_dia, grupo in df_p.groupby(df_p[col_ev].dt.date):
                         st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
                         for _, r in grupo.iterrows():
-                            # Se a hora for válida, formata. Senão, mostra Horário
-                            hora = r[col_ev].strftime("%H:%M") if pd.notnull(r[col_ev]) else "Horário"
-                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {hora}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
+                            try:
+                                h_exibir = r[col_ev].strftime("%H:%M")
+                            except:
+                                h_exibir = "Horário"
+                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {h_exibir}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
                     st.markdown("<br><br>", unsafe_allow_html=True)
-        except Exception as e:
-            # st.error(f"Debug Agenda: {e}") # Descomente se precisar ver o erro exato
+        except:
             pass
-            
+                    
         
         # --- SETOR 3: RECADOS ---
         df_rec = carregar_dados_seguro("cadastro_recados")
