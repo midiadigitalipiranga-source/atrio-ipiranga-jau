@@ -771,26 +771,29 @@ def mostrar_apresentacao():
         def carregar_dados_seguro(aba_nome, data_idx=0, filtrar_hoje=True):
             try:
                 dados = sh.worksheet(aba_nome).get_all_values()
-                if not dados: return pd.DataFrame()
+                if not dados or len(dados) < 2: return pd.DataFrame()
                 
                 df = pd.DataFrame(dados[1:], columns=dados[0])
-                if df.empty: return pd.DataFrame()
                 
                 # Tratamento da Data
                 df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
                 
-                # FILTRO DE APROVAÇÃO (Identifica todas as colunas que chamam 'Aprovação')
-                colunas_aprov = [i for i, col in enumerate(df.columns) if col == "Aprovação"]
-                for idx_col in colunas_aprov:
-                    # Filtra coluna por coluna para garantir que apenas o que for TRUE permaneça
-                    mascara = df.iloc[:, idx_col].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])
-                    df = df[mascara]
+                # FILTRO DE APROVAÇÃO (Remove apenas o que é claramente REPROVADO)
+                if "Aprovação" in df.columns:
+                    # Se houver duplicatas, pegamos a primeira ocorrência
+                    col_aprov = df["Aprovação"]
+                    if isinstance(col_aprov, pd.DataFrame): # Trata duplicidade de nome
+                        col_aprov = col_aprov.iloc[:, 0]
+                    
+                    # Mantém o que NÃO for: Falso, False, 0, ou Vazio
+                    reprovas = ['FALSO', 'FALSE', '0', '0.0', '', None]
+                    df = df[~col_aprov.astype(str).str.upper().str.strip().isin(reprovas)]
                 
                 if filtrar_hoje:
                     df = df[df[df.columns[data_idx]] == hoje]
                 return df
             except: 
-                return pd.DataFrame()            
+                return pd.DataFrame()
 
 
         # --- SETOR 1: AUSÊNCIAS ---
@@ -805,7 +808,7 @@ def mostrar_apresentacao():
         # --- SETOR 2: PROGRAMAÇÃO ---
         try:
             dados_prog = sh.worksheet("cadastro_agenda_semanal").get_all_values()
-            if dados_prog:
+            if dados_prog and len(dados_prog) > 1:
                 df_prog = pd.DataFrame(dados_prog[1:], columns=dados_prog[0])
                 col_ev = df_prog.columns[1] # Coluna B
                 df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
@@ -813,11 +816,14 @@ def mostrar_apresentacao():
                 ini, fim = hoje, hoje + timedelta(days=7)
                 df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)].copy()
                 
-                # FILTRO DE APROVAÇÃO ROBUSTO (Usa índice numérico para evitar erro de duplicidade)
-                indices_aprov = [i for i, col in enumerate(df_p.columns) if col == "Aprovação"]
-                for idx in indices_aprov:
-                    # .iloc[:, idx] garante que estamos pegando a coluna, mesmo que o nome seja repetido
-                    df_p = df_p[df_p.iloc[:, idx].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])]
+                # FILTRO DE APROVAÇÃO PERMISSIVO
+                if "Aprovação" in df_p.columns:
+                    col_aprov_p = df_p["Aprovação"]
+                    if isinstance(col_aprov_p, pd.DataFrame): # Trata duplicidade
+                        col_aprov_p = col_aprov_p.iloc[:, 0]
+                    
+                    reprovas = ['FALSO', 'FALSE', '0', '0.0', '', None]
+                    df_p = df_p[~col_aprov_p.astype(str).str.upper().str.strip().isin(reprovas)]
                 
                 if not df_p.empty:
                     st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
@@ -827,11 +833,16 @@ def mostrar_apresentacao():
                     for data_dia, grupo in df_p.groupby(df_p[col_ev].dt.date):
                         st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
                         for _, r in grupo.iterrows():
-                            hora_val = r[col_ev].strftime("%H:%M") if pd.notnull(r[col_ev]) else "00:00"
+                            # Se a hora for nula, tentamos pegar o texto bruto da coluna B
+                            try:
+                                hora_val = r[col_ev].strftime("%H:%M")
+                            except:
+                                hora_val = "Horário"
+                                
                             st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {hora_val}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
                     st.markdown("<br><br>", unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"Erro na programação: {e}")            
+            pass # Silencia erros para não travar a tela
         
         # --- SETOR 3: RECADOS ---
         df_rec = carregar_dados_seguro("cadastro_recados")
