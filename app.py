@@ -766,31 +766,28 @@ def mostrar_apresentacao():
                 </div>
             """, unsafe_allow_html=True)
 
+        
         # Função de segurança para carregar e filtrar dados
         def carregar_dados_seguro(aba_nome, data_idx=0, filtrar_hoje=True):
             try:
-                # Carrega todos os valores como lista de listas para evitar erro de cabeçalho duplicado
                 dados = sh.worksheet(aba_nome).get_all_values()
                 if not dados: return pd.DataFrame()
                 
-                # Transforma em DataFrame usando a primeira linha como cabeçalho
                 df = pd.DataFrame(dados[1:], columns=dados[0])
-                
                 if df.empty: return pd.DataFrame()
                 
                 # Tratamento da Data
                 df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
                 
-                # Filtro de Aprovação (Trata múltiplas colunas se houver)
-                colunas_aprov = [c for c in df.columns if "Aprovação" in c]
-                for col in colunas_aprov:
-                    df = df[~df[col].astype(str).isin(['0', 'False', 'FALSO', 'false', '0.0'])]
+                # FILTRO DE APROVAÇÃO (Invertido para garantir que mostre apenas o VERDADEIRO)
+                if "Aprovação" in df.columns:
+                    # Mantém apenas o que for TRUE, True, VERDADEIRO ou VERDADEIRO em PT-BR
+                    df = df[df["Aprovação"].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])]
                 
-                # Filtro de Hoje
                 if filtrar_hoje:
                     df = df[df[df.columns[data_idx]] == hoje]
                 return df
-            except Exception as e: 
+            except: 
                 return pd.DataFrame()
 
         # --- SETOR 1: AUSÊNCIAS ---
@@ -801,37 +798,49 @@ def mostrar_apresentacao():
                 renderizar_cartao(f"<b>👤 {r.iloc[1]} ({r.iloc[2]})</b><br>MOTIVO: {r.iloc[3]} | {r.iloc[4]}")
             st.markdown("<br><br>", unsafe_allow_html=True)
 
-# --- SETOR 2: PROGRAMAÇÃO ---
+        
+        # --- SETOR 2: PROGRAMAÇÃO ---
         try:
             dados_prog = sh.worksheet("cadastro_agenda_semanal").get_all_values()
             if dados_prog:
                 df_prog = pd.DataFrame(dados_prog[1:], columns=dados_prog[0])
                 col_ev = df_prog.columns[1] # Coluna B
+                
+                # Converte para data/hora
                 df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
                 
                 ini = hoje
                 fim = hoje + timedelta(days=7)
                 
+                # Filtra o período de 7 dias
                 df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)].copy()
                 
-                # Filtro de Aprovação Robusto
-                colunas_aprov_p = [c for c in df_p.columns if "Aprovação" in c]
-                for col in colunas_aprov_p:
-                    df_p = df_p[~df_p[col].astype(str).isin(['0', 'False', 'FALSO', 'false'])]
+                # FILTRO DE APROVAÇÃO ROBUSTO (Para a aba de programação)
+                if "Aprovação" in df_p.columns:
+                    df_p = df_p[df_p["Aprovação"].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])]
                 
                 if not df_p.empty:
                     st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
                     dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
                     
-                    for data_dia, grupo in df_p.sort_values(by=col_ev).groupby(df_p[col_ev].dt.date):
+                    # Ordenar por data e hora antes de agrupar
+                    df_p = df_p.sort_values(by=col_ev)
+                    
+                    for data_dia, grupo in df_p.groupby(df_p[col_ev].dt.date):
                         st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
                         for _, r in grupo.iterrows():
-                            # Formata a hora se for datetime, senão exibe o texto bruto
-                            hora_formatada = r[col_ev].strftime("%H:%M") if pd.notnull(r[col_ev]) else "--:--"
-                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {hora_formatada}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
+                            # Tenta formatar a hora, se falhar mostra como texto original da coluna B
+                            try:
+                                hora_val = r[col_ev].strftime("%H:%M")
+                            except:
+                                hora_val = "Horário"
+                                
+                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {hora_val}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
                     st.markdown("<br><br>", unsafe_allow_html=True)
-        except:
-            pass
+        except Exception as e:
+            st.error(f"Erro na programação: {e}")
+            
+        
         # --- SETOR 3: RECADOS ---
         df_rec = carregar_dados_seguro("cadastro_recados")
         if not df_rec.empty:
