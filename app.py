@@ -799,42 +799,39 @@ def mostrar_apresentacao():
             st.markdown("<br><br>", unsafe_allow_html=True)
 
         
-        # --- SETOR 2: PROGRAMAÇÃO ---
+        # --- SETOR 2: PROGRAMAÇÃO (CORRIGIDO) ---
         try:
             dados_prog = sh.worksheet("cadastro_agenda_semanal").get_all_values()
             if dados_prog:
+                # Criamos o DataFrame
                 df_prog = pd.DataFrame(dados_prog[1:], columns=dados_prog[0])
-                col_ev = df_prog.columns[1] # Coluna B
+                col_ev = df_prog.columns[1] # Coluna B (Data/Hora)
                 
-                # Converte para data/hora
+                # Converte coluna de data
                 df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
                 
+                # Define intervalo de 7 dias
                 ini = hoje
                 fim = hoje + timedelta(days=7)
-                
-                # Filtra o período de 7 dias
                 df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)].copy()
                 
-                # FILTRO DE APROVAÇÃO ROBUSTO (Para a aba de programação)
+                # FILTRO DE APROVAÇÃO (Corrigido: Aplicando na série da coluna)
                 if "Aprovação" in df_p.columns:
-                    df_p = df_p[df_p["Aprovação"].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])]
+                    # Filtramos garantindo que pegamos a coluna correta e tratamos como string
+                    # Isso aceita 'TRUE', 'VERDADEIRO' ou a caixa de seleção marcada
+                    mascara_aprovado = df_p["Aprovação"].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])
+                    df_p = df_p[mascara_aprovado]
                 
                 if not df_p.empty:
                     st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
                     dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
                     
-                    # Ordenar por data e hora antes de agrupar
+                    # Ordenar e Agrupar
                     df_p = df_p.sort_values(by=col_ev)
-                    
                     for data_dia, grupo in df_p.groupby(df_p[col_ev].dt.date):
                         st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
                         for _, r in grupo.iterrows():
-                            # Tenta formatar a hora, se falhar mostra como texto original da coluna B
-                            try:
-                                hora_val = r[col_ev].strftime("%H:%M")
-                            except:
-                                hora_val = "Horário"
-                                
+                            hora_val = r[col_ev].strftime("%H:%M") if pd.notnull(r[col_ev]) else "00:00"
                             st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {hora_val}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
                     st.markdown("<br><br>", unsafe_allow_html=True)
         except Exception as e:
