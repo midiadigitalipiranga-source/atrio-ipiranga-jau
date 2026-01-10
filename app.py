@@ -770,32 +770,28 @@ def mostrar_apresentacao():
         # Função de segurança para carregar e filtrar dados (VERSÃO FINAL CORRIGIDA)
         def carregar_dados_seguro(aba_nome, data_idx=0, filtrar_hoje=True):
             try:
-                # 1. Carrega os dados brutos como lista de listas (evita erro de nomes duplicados)
                 dados = sh.worksheet(aba_nome).get_all_values()
                 if not dados: return pd.DataFrame()
                 
-                # 2. Cria o DataFrame
                 df = pd.DataFrame(dados[1:], columns=dados[0])
                 if df.empty: return pd.DataFrame()
                 
-                # 3. Tratamento da Data (Coluna na posição data_idx)
+                # Tratamento da Data
                 df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
                 
-                # 4. Filtro de Aprovação Robusto
-                if "Aprovação" in df.columns:
-                    # Aplicamos o filtro na série da coluna, tratando como texto e removendo espaços
-                    mascara_aprovado = df["Aprovação"].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])
-                    df = df[mascara_aprovado]
+                # FILTRO DE APROVAÇÃO (Identifica todas as colunas que chamam 'Aprovação')
+                colunas_aprov = [i for i, col in enumerate(df.columns) if col == "Aprovação"]
+                for idx_col in colunas_aprov:
+                    # Filtra coluna por coluna para garantir que apenas o que for TRUE permaneça
+                    mascara = df.iloc[:, idx_col].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])
+                    df = df[mascara]
                 
-                # 5. Filtro de Hoje
                 if filtrar_hoje:
                     df = df[df[df.columns[data_idx]] == hoje]
-                
                 return df
-            except Exception as e:
-                # Opcional: st.error(f"Erro na aba {aba_nome}: {e}") # Para debug se necessário
-                return pd.DataFrame()
-            
+            except: 
+                return pd.DataFrame()            
+
 
         # --- SETOR 1: AUSÊNCIAS ---
         df_aus = carregar_dados_seguro("cadastro_ausencia")
@@ -806,35 +802,28 @@ def mostrar_apresentacao():
             st.markdown("<br><br>", unsafe_allow_html=True)
 
         
-        # --- SETOR 2: PROGRAMAÇÃO (CORRIGIDO) ---
+        # --- SETOR 2: PROGRAMAÇÃO ---
         try:
             dados_prog = sh.worksheet("cadastro_agenda_semanal").get_all_values()
             if dados_prog:
-                # Criamos o DataFrame
                 df_prog = pd.DataFrame(dados_prog[1:], columns=dados_prog[0])
-                col_ev = df_prog.columns[1] # Coluna B (Data/Hora)
-                
-                # Converte coluna de data
+                col_ev = df_prog.columns[1] # Coluna B
                 df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
                 
-                # Define intervalo de 7 dias
-                ini = hoje
-                fim = hoje + timedelta(days=7)
+                ini, fim = hoje, hoje + timedelta(days=7)
                 df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)].copy()
                 
-                # FILTRO DE APROVAÇÃO (Corrigido: Aplicando na série da coluna)
-                if "Aprovação" in df_p.columns:
-                    # Filtramos garantindo que pegamos a coluna correta e tratamos como string
-                    # Isso aceita 'TRUE', 'VERDADEIRO' ou a caixa de seleção marcada
-                    mascara_aprovado = df_p["Aprovação"].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])
-                    df_p = df_p[mascara_aprovado]
+                # FILTRO DE APROVAÇÃO ROBUSTO (Usa índice numérico para evitar erro de duplicidade)
+                indices_aprov = [i for i, col in enumerate(df_p.columns) if col == "Aprovação"]
+                for idx in indices_aprov:
+                    # .iloc[:, idx] garante que estamos pegando a coluna, mesmo que o nome seja repetido
+                    df_p = df_p[df_p.iloc[:, idx].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])]
                 
                 if not df_p.empty:
                     st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
                     dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
-                    
-                    # Ordenar e Agrupar
                     df_p = df_p.sort_values(by=col_ev)
+                    
                     for data_dia, grupo in df_p.groupby(df_p[col_ev].dt.date):
                         st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
                         for _, r in grupo.iterrows():
@@ -842,8 +831,7 @@ def mostrar_apresentacao():
                             st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {hora_val}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
                     st.markdown("<br><br>", unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"Erro na programação: {e}")
-            
+            st.error(f"Erro na programação: {e}")            
         
         # --- SETOR 3: RECADOS ---
         df_rec = carregar_dados_seguro("cadastro_recados")
