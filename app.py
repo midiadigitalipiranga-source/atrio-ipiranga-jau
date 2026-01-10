@@ -775,21 +775,21 @@ def mostrar_apresentacao():
                 
                 df = pd.DataFrame(dados[1:], columns=dados[0])
                 
-                # Tratamento da Data
+                # Converte a coluna de data e remove a hora para comparação
                 df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
                 
-                # FILTRO DE APROVAÇÃO (Remove apenas o que é claramente REPROVADO)
+                # Filtro de Aprovação
                 if "Aprovação" in df.columns:
-                    # Se houver duplicatas, pegamos a primeira ocorrência
                     col_aprov = df["Aprovação"]
-                    if isinstance(col_aprov, pd.DataFrame): # Trata duplicidade de nome
+                    # Se houver duplicidade, col_aprov vira DataFrame, pegamos a primeira série
+                    if isinstance(col_aprov, pd.DataFrame):
                         col_aprov = col_aprov.iloc[:, 0]
                     
-                    # Mantém o que NÃO for: Falso, False, 0, ou Vazio
-                    reprovas = ['FALSO', 'FALSE', '0', '0.0', '', None]
-                    df = df[~col_aprov.astype(str).str.upper().str.strip().isin(reprovas)]
+                    # Filtro: Mantém apenas o que for VERDADEIRO ou TRUE (caixa de seleção marcada)
+                    df = df[col_aprov.astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])]
                 
                 if filtrar_hoje:
+                    # Garante que 'hoje' e a coluna de data são do mesmo tipo (date)
                     df = df[df[df.columns[data_idx]] == hoje]
                 return df
             except: 
@@ -810,39 +810,41 @@ def mostrar_apresentacao():
             dados_prog = sh.worksheet("cadastro_agenda_semanal").get_all_values()
             if dados_prog and len(dados_prog) > 1:
                 df_prog = pd.DataFrame(dados_prog[1:], columns=dados_prog[0])
-                col_ev = df_prog.columns[1] # Coluna B
+                col_ev = df_prog.columns[1] # Coluna B (Data)
+                
+                # Converte a coluna para datetime
                 df_prog[col_ev] = pd.to_datetime(df_prog[col_ev], dayfirst=True, errors='coerce')
                 
-                ini, fim = hoje, hoje + timedelta(days=7)
+                # Define o intervalo: de Hoje até Hoje + 7
+                ini = hoje
+                fim = hoje + timedelta(days=7)
+                
+                # Filtra o período
                 df_p = df_prog[(df_prog[col_ev].dt.date >= ini) & (df_prog[col_ev].dt.date <= fim)].copy()
                 
-                # FILTRO DE APROVAÇÃO PERMISSIVO
+                # Filtro de Aprovação (Mesma lógica robusta)
                 if "Aprovação" in df_p.columns:
-                    col_aprov_p = df_p["Aprovação"]
-                    if isinstance(col_aprov_p, pd.DataFrame): # Trata duplicidade
-                        col_aprov_p = col_aprov_p.iloc[:, 0]
-                    
-                    reprovas = ['FALSO', 'FALSE', '0', '0.0', '', None]
-                    df_p = df_p[~col_aprov_p.astype(str).str.upper().str.strip().isin(reprovas)]
+                    c_aprov = df_p["Aprovação"]
+                    if isinstance(c_aprov, pd.DataFrame): c_aprov = c_aprov.iloc[:, 0]
+                    df_p = df_p[c_aprov.astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])]
                 
                 if not df_p.empty:
                     st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
                     dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+                    
+                    # Ordena cronologicamente
                     df_p = df_p.sort_values(by=col_ev)
                     
                     for data_dia, grupo in df_p.groupby(df_p[col_ev].dt.date):
                         st.markdown(f"**{dias_pt[data_dia.weekday()]} ({data_dia.strftime('%d/%m')})**")
                         for _, r in grupo.iterrows():
-                            # Se a hora for nula, tentamos pegar o texto bruto da coluna B
-                            try:
-                                hora_val = r[col_ev].strftime("%H:%M")
-                            except:
-                                hora_val = "Horário"
-                                
-                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {hora_val}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
+                            # Formatação da Hora
+                            h = r[col_ev].strftime("%H:%M") if pd.notnull(r[col_ev]) else "Horário"
+                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {h}</b> - {r.iloc[2]}</div>', unsafe_allow_html=True)
                     st.markdown("<br><br>", unsafe_allow_html=True)
         except Exception as e:
-            pass # Silencia erros para não travar a tela
+            st.error(f"Erro ao carregar a agenda: {e}")
+            
         
         # --- SETOR 3: RECADOS ---
         df_rec = carregar_dados_seguro("cadastro_recados")
