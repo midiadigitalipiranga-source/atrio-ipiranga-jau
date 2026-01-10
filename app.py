@@ -767,28 +767,35 @@ def mostrar_apresentacao():
             """, unsafe_allow_html=True)
 
         
-        # Função de segurança para carregar e filtrar dados
+        # Função de segurança para carregar e filtrar dados (VERSÃO FINAL CORRIGIDA)
         def carregar_dados_seguro(aba_nome, data_idx=0, filtrar_hoje=True):
             try:
+                # 1. Carrega os dados brutos como lista de listas (evita erro de nomes duplicados)
                 dados = sh.worksheet(aba_nome).get_all_values()
                 if not dados: return pd.DataFrame()
                 
+                # 2. Cria o DataFrame
                 df = pd.DataFrame(dados[1:], columns=dados[0])
                 if df.empty: return pd.DataFrame()
                 
-                # Tratamento da Data
+                # 3. Tratamento da Data (Coluna na posição data_idx)
                 df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
                 
-                # FILTRO DE APROVAÇÃO (Invertido para garantir que mostre apenas o VERDADEIRO)
+                # 4. Filtro de Aprovação Robusto
                 if "Aprovação" in df.columns:
-                    # Mantém apenas o que for TRUE, True, VERDADEIRO ou VERDADEIRO em PT-BR
-                    df = df[df["Aprovação"].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])]
+                    # Aplicamos o filtro na série da coluna, tratando como texto e removendo espaços
+                    mascara_aprovado = df["Aprovação"].astype(str).str.upper().str.strip().isin(['TRUE', 'VERDADEIRO'])
+                    df = df[mascara_aprovado]
                 
+                # 5. Filtro de Hoje
                 if filtrar_hoje:
                     df = df[df[df.columns[data_idx]] == hoje]
+                
                 return df
-            except: 
+            except Exception as e:
+                # Opcional: st.error(f"Erro na aba {aba_nome}: {e}") # Para debug se necessário
                 return pd.DataFrame()
+            
 
         # --- SETOR 1: AUSÊNCIAS ---
         df_aus = carregar_dados_seguro("cadastro_ausencia")
