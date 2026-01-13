@@ -757,8 +757,8 @@ def mostrar_apresentacao():
     try:
         sh = conectar()
         hoje = obter_hoje_brasil()
+        hoje_str = hoje.strftime('%Y-%m-%d') # Padroniza hoje como texto para comparação segura
         
-        # Função para padronizar os cartões (Fonte 18px neutra)
         def renderizar_cartao(conteudo):
             st.markdown(f"""
                 <div style="background-color: #ffffff; padding: 18px; border-radius: 12px; margin-bottom: 12px; border: 1px solid #ddd; border-left: 8px solid #0e2433;">
@@ -766,28 +766,28 @@ def mostrar_apresentacao():
                 </div>
             """, unsafe_allow_html=True)
 
-        # Função de segurança corrigida para garantir que áreas como Aniversários apareçam
+        # FUNÇÃO DE CARREGAMENTO ULTRA-FLEXÍVEL
         def carregar_dados_seguro(aba_nome, data_idx=0, filtrar_hoje=True):
             try:
-                # Usamos get_all_values para evitar erros de cabeçalho duplicado
                 dados = sh.worksheet(aba_nome).get_all_values()
                 if not dados or len(dados) < 2: return pd.DataFrame()
                 
                 df = pd.DataFrame(dados[1:], columns=dados[0])
                 
-                # Tratamento da Data
-                df[df.columns[data_idx]] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.date
-                
-                # FILTRO DE APROVAÇÃO FLEXÍVEL (Mostra tudo que NÃO for explicitamente falso)
+                # Tratamento de Aprovação: Só remove se for explicitamente 'FALSO'
                 if "Aprovação" in df.columns:
-                    col_ap = df["Aprovação"]
-                    if isinstance(col_ap, pd.DataFrame): col_ap = col_ap.iloc[:, 0]
-                    serie_aprov = col_ap.astype(str).str.upper().str.strip()
-                    # Remove apenas se for claramente reprovado
-                    df = df[~serie_aprov.isin(['FALSE', 'FALSO', '0', '0.0', ''])]
+                    col_nome = "Aprovação"
+                    # Garante pegar apenas uma coluna se houver duplicados
+                    val_aprov = df[col_nome].astype(str).str.upper().str.strip()
+                    if isinstance(val_aprov, pd.DataFrame): val_aprov = val_aprov.iloc[:, 0]
+                    df = df[~val_aprov.isin(['FALSE', 'FALSO', '0', '0.0'])]
+
+                # Tratamento de Data: Converte para string YYYY-MM-DD para comparar sem erro
+                df['data_aux'] = pd.to_datetime(df[df.columns[data_idx]], dayfirst=True, errors='coerce').dt.strftime('%Y-%m-%d')
                 
                 if filtrar_hoje:
-                    df = df[df[df.columns[data_idx]] == hoje]
+                    df = df[df['data_aux'] == hoje_str]
+                
                 return df
             except: 
                 return pd.DataFrame()
@@ -798,38 +798,23 @@ def mostrar_apresentacao():
             st.info("💡 JUSTIFICANDO A AUSÊNCIA DE ALGUMAS PESSOAS")
             for _, r in df_aus.iterrows():
                 renderizar_cartao(f"<b>👤 {r.iloc[1]} ({r.iloc[2]})</b><br>MOTIVO: {r.iloc[3]} | {r.iloc[4]}")
-            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
-        # --- SETOR 2: PROGRAMAÇÃO (INTEGRADO COM GOOGLE AGENDA) ---
+        # --- SETOR 2: PROGRAMAÇÃO (GOOGLE CALENDAR) ---
         try:
-            # Chamamos a função que você já tem pronta e que está perfeita
             df_cal, _, _ = obter_eventos_calendario()
-            
             if not df_cal.empty:
-                # Filtramos apenas os aprovados (cartões verdes do seu módulo)
                 df_p = df_cal[df_cal["Aprovação"] == True].copy()
-                
                 if not df_p.empty:
                     st.warning("📣 VAMOS AGORA A PROGRAMAÇÃO DA SEMANA")
                     dias_pt = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
-                    
-                    # Ordenação cronológica
                     df_p = df_p.sort_values(by="Data")
-                    
                     for data_dia, grupo in df_p.groupby(df_p["Data"].dt.date):
-                        # Título da data (Tamanho 16px conforme solicitado anteriormente)
                         st.markdown(f'<div style="font-size: 16px; font-weight: bold; margin-top: 15px;">{dias_pt[data_dia.weekday()]} ({data_dia.strftime("%d/%m")})</div>', unsafe_allow_html=True)
-                        
                         for _, row in grupo.iterrows():
-                            hora_ev = row['Data'].strftime('%H:%M')
-                            st.markdown(f"""
-                                <div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;">
-                                    <b>⏰ {hora_ev}</b> - {row['Evento']}
-                                </div>
-                            """, unsafe_allow_html=True)
-                    st.markdown("<br><br>", unsafe_allow_html=True)
-        except Exception as e:
-            st.error(f"Erro ao integrar Agenda: {e}")
+                            st.markdown(f'<div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #0e2433; margin-bottom: 5px; font-size: 18px;"><b>⏰ {row["Data"].strftime("%H:%M")}</b> - {row["Evento"]}</div>', unsafe_allow_html=True)
+                    st.markdown("<br>", unsafe_allow_html=True)
+        except: pass
 
         # --- SETOR 3: RECADOS ---
         df_rec = carregar_dados_seguro("cadastro_recados")
@@ -837,7 +822,7 @@ def mostrar_apresentacao():
             st.info("💡 VAMOS AGORA PARA OS RECADOS SOLICITADOS")
             for _, r in df_rec.iterrows():
                 renderizar_cartao(f"<b>💬 {r.iloc[2]}</b><br><small>Solicitante: {r.iloc[1]}</small>")
-            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
         # --- SETOR 4: ANIVERSÁRIOS ---
         df_par = carregar_dados_seguro("cadastro_parabenizacao")
@@ -845,9 +830,9 @@ def mostrar_apresentacao():
             st.success("🎂 A ASSEMBLEIA MINISTÉRIO IPIRANGA PARABENIZA A:")
             for _, r in df_par.iterrows():
                 renderizar_cartao(f"<b>✨ {r.iloc[1]} ({r.iloc[2]})</b><br>{r.iloc[3]}")
-            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
-        # --- SETOR 5: VISITANTES (TEXTOS COMPLETOS RESTAURADOS) ---
+        # --- SETOR 5: VISITANTES ---
         df_vis = carregar_dados_seguro("cadastro_visitante")
         if not df_vis.empty:
             st.warning("🫂 VAMOS CONHECER NOSSOS VISITANTES DE HOJE:")
@@ -855,7 +840,6 @@ def mostrar_apresentacao():
             for _, r in df_vis.iterrows():
                 renderizar_cartao(f"<b>👤 {r.iloc[1]}</b><br>CONVITE DE: {r.iloc[2]} | IGREJA: {r.iloc[3]}")
             
-            # Texto de recepção restaurado do código antigo
             st.markdown("""
                 <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; border: 1px solid #0e2433; margin-top: 15px;">
                     <p style="font-size: 18px;"><b>PEÇO QUE A IGREJA SE COLOQUEM EM PÉ PARA RECEBERMOS NOSSOS VISITANTES COM UM ABRAÇO, UM SORRISO E UM APERTO DE MÃO.</b></p>
@@ -864,39 +848,38 @@ def mostrar_apresentacao():
                     <p style="text-align: center; font-style: italic; margin-top: 10px;">🎶 "CORINHO COM A BASE MUSICAL"</p>
                 </div>
             """, unsafe_allow_html=True)
-            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
-        # --- SETOR 6: ORAÇÃO (HOJE + 2 DIAS ANTES + NOME DO PRELETOR) ---
+        # --- SETOR 6: ORAÇÃO ---
         df_ora_bruto = carregar_dados_seguro("cadastro_oracao", filtrar_hoje=False)
         if not df_ora_bruto.empty:
             data_limite = hoje - timedelta(days=2)
-            df_ora = df_ora_bruto[(df_ora_bruto[df_ora_bruto.columns[0]] >= data_limite) & (df_ora_bruto[df_ora_bruto.columns[0]] <= hoje)]
+            # Filtro manual de data para oração (últimos 3 dias)
+            df_ora = df_ora_bruto[pd.to_datetime(df_ora_bruto[df_ora_bruto.columns[0]], dayfirst=True).dt.date >= data_limite]
             
             if not df_ora.empty:
-                st.markdown("<h3 style='text-align: center;'>🙏 " + '""COM A IGREJA EM PÉ""' + "</h3>", unsafe_allow_html=True)
+                st.markdown("<h3 style='text-align: center;'>🙏 " + '""COM A IGREJA EM PÉ""' + "</h3>")
                 st.info("TEMOS ALGUNS PEDIDOS DE ORAÇÃO")
                 for _, r in df_ora.sort_values(by=df_ora.columns[0], ascending=False).iterrows():
                     renderizar_cartao(f"<b>🙏 PARA: {r.iloc[1]}</b><br>MOTIVO: {r.iloc[2]} | OBS: {r.iloc[3]}")
                 
                 st.markdown("<p style='text-align: center; font-weight: bold; font-size: 19px;'>PARA ORAR POR ESTES PEDIDOS VOU CHAMAR O...</p>", unsafe_allow_html=True)
                 
-                # Gestão do nome do preletor (Reset diário)
                 if 'nome_oracao' not in st.session_state: st.session_state.nome_oracao = ""
                 
-                col_i, col_b = st.columns([4,1])
-                with col_i:
-                    nome_digitado = st.text_input("Quem vai orar?", key="input_orador", value=st.session_state.nome_oracao, label_visibility="collapsed")
-                    st.session_state.nome_oracao = nome_digitado
-                with col_b:
+                c1, c2 = st.columns([4,1])
+                with c1:
+                    st.session_state.nome_oracao = st.text_input("Orador:", value=st.session_state.nome_oracao, key="input_orador_final", label_visibility="collapsed")
+                with c2:
                     if st.button("Limpar"):
                         st.session_state.nome_oracao = ""
                         st.rerun()
 
                 if st.session_state.nome_oracao:
-                    st.markdown(f'<div style="text-align: center; margin-top: 10px;"><h2 style="color: #d32f2f; font-weight: bold; font-size: 32px; text-transform: uppercase;">{st.session_state.nome_oracao}</h2></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="text-align: center;"><h2 style="color: #d32f2f; font-weight: bold; font-size: 32px; text-transform: uppercase;">{st.session_state.nome_oracao}</h2></div>', unsafe_allow_html=True)
 
     except Exception as e:
-        st.error(f"Erro ao carregar roteiro de Apresentação: {e}")
+        st.error(f"Erro geral: {e}")
                                 
                 
 # --- ATUALIZAÇÃO DO ROTEAMENTO ---
