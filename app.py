@@ -298,15 +298,13 @@ def gerenciar_visitantes():
     except Exception as e:
         st.error(f"Erro crítico: {e}")
 
-# --- MÓDULO DE AUSÊNCIA ---
-
 import pandas as pd
 import streamlit as st
 import time
 
 def gerenciar_ausencia():
     st.title("📉 Ausências de Hoje")
-    st.link_button("➕ Justificar Ausência", "https://docs.google.com/forms/d/e/1FAIpQLSdlEV-UIY4L2ElRRL-uZqOUXiEtTfapQ0lkHbK1Fy-H1rcJag/viewform", use_container_width=True)
+    st.link_button("➕ Justificar Ausência", "https://docs.google.com/forms/...", use_container_width=True)
     st.markdown("---")
 
     try:
@@ -321,32 +319,34 @@ def gerenciar_ausencia():
         df_original = pd.DataFrame(dados)
         col_data = df_original.columns[0]
         
-        # Converter para data com tratamento de erro robusto
+        # 1. Padronização de datas
         df_original[col_data] = pd.to_datetime(df_original[col_data], dayfirst=True, errors='coerce')
-        
         hoje = obter_hoje_brasil()
-        # Filtramos as linhas de hoje
-        mask_hoje = df_original[col_data].dt.date == hoje
-        df_hoje = df_original[mask_hoje].copy()
+        
+        # 2. Filtragem e Reset de Índice (Essencial para evitar o erro de 'out of bounds')
+        # Guardamos o índice original em uma coluna para saber onde salvar depois
+        df_original['temp_index'] = df_original.index
+        df_hoje = df_original[df_original[col_data].dt.date == hoje].copy()
 
         if df_hoje.empty:
-            st.info(f"📅 Nenhuma ausência registrada para hoje ({hoje.strftime('%d/%m/%Y')}).")
-            # Mesmo vazio, podemos querer ver o painel se houver erro de data, 
-            # mas por segurança vamos parar aqui
+            st.info(f"📅 Nenhuma ausência para hoje ({hoje.strftime('%d/%m/%Y')}).")
             return
 
-        # Lógica de Aprovação
+        # 3. Lógica de Aprovação corrigida (Garantir que novo = Verde)
         if "Aprovação" not in df_hoje.columns:
             df_hoje["Aprovação"] = True
         else:
-            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(lambda x: False if str(x).upper() in ['0', 'FALSE', 'FALSO', ''] else True)
+            # Converte para booleano real para o checkbox funcionar e a cor bater
+            df_hoje["Aprovação"] = df_hoje["Aprovação"].apply(
+                lambda x: False if str(x).upper() in ['0', 'FALSE', 'FALSO', 'NÃO', ''] else True
+            )
 
-        # Mapeamento dinâmico de colunas
         cols = df_hoje.columns
         col_nome, col_cargo, col_motivo, col_obs = cols[1], cols[2], cols[3], cols[4]
 
-        # Cards Visuais
-        for i, row in df_hoje.iterrows():
+        # 4. Exibição dos Cards
+        for _, row in df_hoje.iterrows():
+            # Agora a cor segue estritamente o booleano da coluna 'Aprovação'
             cor = "#00FF7F" if row["Aprovação"] else "#FFA07A"
             st.markdown(f"""
                 <div style="background-color: {cor}; padding: 15px; border-radius: 12px; margin-bottom: 10px; color: #0e2433; border: 1px solid rgba(0,0,0,0.1);">
@@ -355,37 +355,36 @@ def gerenciar_ausencia():
                 </div>
             """, unsafe_allow_html=True)
 
-        st.markdown('<div style="margin-top: 100px;"></div>', unsafe_allow_html=True)
         st.markdown("### ⚙️ Painel de Edição")
+        
+        # Criamos o editor. O segredo aqui é NÃO esconder o índice internamente ou 
+        # garantir que o mapeamento use a coluna 'temp_index'
         df_editado = st.data_editor(
-            df_hoje[["Aprovação", col_nome, col_cargo, col_motivo, col_obs]],
+            df_hoje[["Aprovação", col_nome, col_cargo, col_motivo, col_obs, "temp_index"]],
             use_container_width=True, 
             hide_index=True,
+            column_config={"temp_index": None}, # Esconde a coluna de suporte do usuário
             key="ed_ausencia"
         )
 
         if st.button("💾 SALVAR ALTERAÇÕES", use_container_width=True):
-            with st.spinner("Sincronizando com Google Sheets..."):
-                # 1. Atualizar apenas as linhas de hoje no DataFrame original
-                for idx_editado, row_edit in df_editado.iterrows():
-                    # Mapeamos de volta para o índice original do df_original
-                    idx_original = df_hoje.index[idx_editado]
-                    df_original.at[idx_original, "Aprovação"] = 1 if row_edit["Aprovação"] else 0
-                    df_original.at[idx_original, col_nome] = row_edit[col_nome]
-                    df_original.at[idx_original, col_cargo] = row_edit[col_cargo]
-                    df_original.at[idx_original, col_motivo] = row_edit[col_motivo]
-                    df_original.at[idx_original, col_obs] = row_edit[col_obs]
+            with st.spinner("Sincronizando..."):
+                # 5. Mapeamento Direto via temp_index
+                for _, row_edit in df_editado.iterrows():
+                    idx_real = row_edit["temp_index"]
+                    df_original.at[idx_real, "Aprovação"] = 1 if row_edit["Aprovação"] else 0
+                    df_original.at[idx_real, col_nome] = row_edit[col_nome]
+                    df_original.at[idx_real, col_cargo] = row_edit[col_cargo]
+                    df_original.at[idx_real, col_motivo] = row_edit[col_motivo]
+                    df_original.at[idx_real, col_obs] = row_edit[col_obs]
 
-                # 2. Preparação CRÍTICA para salvar
-                df_para_salvar = df_original.copy()
-                # Converter data de volta para string (evita erro de JSON no Google)
+                # Limpeza e Salvamento
+                df_para_salvar = df_original.drop(columns=['temp_index']).copy()
                 df_para_salvar[col_data] = df_para_salvar[col_data].dt.strftime('%d/%m/%Y %H:%M:%S')
-                # Substituir NaT/NaN por string vazia (ESSENCIAL)
                 df_para_salvar = df_para_salvar.fillna("")
 
-                # 3. Salvar de forma segura
                 lista_final = [df_para_salvar.columns.values.tolist()] + df_para_salvar.values.tolist()
-                aba.update(lista_final, range_name="A1") # Update direto sem clear prévio
+                aba.update(lista_final, range_name="A1")
                 
                 st.success("✅ Atualizado com sucesso!")
                 time.sleep(1)
@@ -858,11 +857,13 @@ def mostrar_apresentacao():
             df_ora = df_ora_bruto[pd.to_datetime(df_ora_bruto[df_ora_bruto.columns[0]], dayfirst=True).dt.date >= data_limite]
             
             if not df_ora.empty:
-                st.markdown("<h3 style='text-align: center;'>🙏 " + '""COM A IGREJA EM PÉ""' + "</h3>")
+                # CORREÇÃO AQUI: Adicionado unsafe_allow_html=True
+                st.markdown("<h3 style='text-align: center;'>🙏 " + '""COM A IGREJA EM PÉ""' + "</h3>", unsafe_allow_html=True)
+                
                 st.info("TEMOS ALGUNS PEDIDOS DE ORAÇÃO")
                 for _, r in df_ora.sort_values(by=df_ora.columns[0], ascending=False).iterrows():
                     renderizar_cartao(f"<b>🙏 PARA: {r.iloc[1]}</b><br>MOTIVO: {r.iloc[2]} | OBS: {r.iloc[3]}")
-                
+                    
                 st.markdown("<p style='text-align: center; font-weight: bold; font-size: 19px;'>PARA ORAR POR ESTES PEDIDOS VOU CHAMAR O...</p>", unsafe_allow_html=True)
                 
                 if 'nome_oracao' not in st.session_state: st.session_state.nome_oracao = ""
