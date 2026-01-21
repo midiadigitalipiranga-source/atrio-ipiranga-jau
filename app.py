@@ -298,13 +298,16 @@ def gerenciar_visitantes():
     except Exception as e:
         st.error(f"Erro crítico: {e}")
 
+
+#MÓDULO AUSÊNCIAS
+
 import pandas as pd
 import streamlit as st
 import time
 
 def gerenciar_ausencia():
     st.title("📉 Ausências de Hoje")
-    st.link_button("➕ Justificar Ausência", "https://docs.google.com/forms/...", use_container_width=True)
+    st.link_button("➕ Justificar Ausência", "https://docs.google.com/forms/d/e/1FAIpQLSdlEV-UIY4L2ElRRL-uZqOUXiEtTfapQ0lkHbK1Fy-H1rcJag/viewform?usp=header", use_container_width=True)
     st.markdown("---")
 
     try:
