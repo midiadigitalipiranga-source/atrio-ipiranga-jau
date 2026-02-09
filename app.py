@@ -835,6 +835,8 @@ def mostrar_apresentacao():
             
             st.markdown("""
                 <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; border: 1px solid #0e2433; margin-top: 15px; margin-bottom: 15px;">
+                    <p style="text-align: center; font-size: 30px; color: #0e2433; font-weight: bold;">AGORA PARA RECEBER NOSSOS VISITANTES DEVOLVO O CULTO PARA NOSSO PASTOR</p>
+                    <p style="text-align: center; font-size: 20px; color: #0e2433; font-weight: bold;">-------------------------------</p>                   
                     <p style="text-align: center; font-size: 20px;"><b>PEÇO QUE A IGREJA SE COLOQUEM EM PÉ PARA RECEBERMOS NOSSOS VISITANTES COM UM ABRAÇO, UM SORRISO E UM APERTO DE MÃO.</b></p>
                     <p style="text-align: center; font-size: 20px; color: #0e2433; font-weight: bold;">TODOS JUNTOS, COMO VAMOS RECEBER OS VISITANTES?</p>
                     <p style="text-align: center; font-size: 20px; color: #d32f2f; font-weight: bold;">SEJAM BEM VINDOS EM NOME DE JESUS, SINTAM-SE BEM, VOLTEM SEMPRE, JESUS OS AMA E NÓS TAMBÉM.</p>
