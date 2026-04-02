@@ -5,7 +5,7 @@ import gspread
 import json
 from datetime import datetime, timedelta
 import time
-
+import pytz
 
 # --- NOVOS IMPORTS NECESSÁRIOS ---
 from google.oauth2.service_account import Credentials  # Para lidar com os SCOPES de acesso
